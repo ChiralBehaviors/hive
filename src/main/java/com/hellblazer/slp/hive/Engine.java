@@ -26,6 +26,7 @@ import static com.hellblazer.slp.hive.Messages.MESSAGE_HEADER_BYTE_SIZE;
 import static com.hellblazer.slp.hive.Messages.REMOVE;
 import static com.hellblazer.slp.hive.Messages.STATE_REQUEST;
 import static com.hellblazer.slp.hive.Messages.UPDATE;
+import static com.hellblazer.slp.hive.Messages.UUID_BYTE_SIZE;
 import static java.lang.Math.min;
 import static java.lang.String.format;
 
@@ -140,6 +141,7 @@ public class Engine {
                                                                                              100);
     private final ScheduledExecutorService                   executor;
     private final FailureDetectorFactory                     fdFactory;
+    private final InetSocketAddress                          groupAddess;
     private final int                                        heartbeat_period;
     private ScheduledFuture<?>                               heartbeatTask;
     private final TimeUnit                                   heartbeatUnit;
@@ -148,6 +150,7 @@ public class Engine {
     private final InetSocketAddress                          localAddress;
     private final ConcurrentMap<UUID, ReplicatedState>       localState = new ConcurrentHashMap<>();
     private final int                                        maxDigests;
+    private final int                                        maxUuids;
     private final ConcurrentMap<InetSocketAddress, Endpoint> members    = new ConcurrentHashMap<>();
     private final AtomicBoolean                              running    = new AtomicBoolean();
     private HiveScope                                        scope;
@@ -156,14 +159,16 @@ public class Engine {
     public Engine(ScheduledExecutorService executor,
                   FailureDetectorFactory fdFactory, NoArgGenerator idGenerator,
                   int heartbeat_period, TimeUnit heartbeatUnit,
-                  DatagramSocket socket, int receiveBufferMultiplier,
-                  int sendBufferMultiplier, Mac mac) throws SocketException {
+                  DatagramSocket socket, InetSocketAddress groupAddress,
+                  int receiveBufferMultiplier, int sendBufferMultiplier, Mac mac)
+                                                                                 throws SocketException {
         this.executor = executor;
         this.fdFactory = fdFactory;
         this.idGenerator = idGenerator;
         this.heartbeat_period = heartbeat_period;
         this.heartbeatUnit = heartbeatUnit;
         this.socket = socket;
+        this.groupAddess = groupAddress;
         try {
             socket.setReceiveBufferSize(MAX_SEG_SIZE * receiveBufferMultiplier);
             socket.setSendBufferSize(MAX_SEG_SIZE * sendBufferMultiplier);
@@ -178,6 +183,8 @@ public class Engine {
                               - mac.getMacLength();
         maxDigests = (payloadByteSize - BYTE_SIZE) // 1 byte for #digests
                      / DIGEST_BYTE_SIZE;
+        maxUuids = (payloadByteSize - BYTE_SIZE) // 1 byte for #uuids
+                   / UUID_BYTE_SIZE;
     }
 
     public void deregister(UUID id) {
@@ -269,6 +276,15 @@ public class Engine {
             log.debug(String.format("Member: %s updating replicated state",
                                     getLocalAddress()));
         }
+        ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
+        buffer.order(ByteOrder.BIG_ENDIAN);
+        buffer.position(MAGIC_BYTE_SIZE);
+        try {
+            state.writeTo(buffer);
+            send(UPDATE, buffer, groupAddess);
+        } finally {
+            bufferPool.free(buffer);
+        }
     }
 
     private synchronized void addMac(byte[] data, int offset, int length)
@@ -276,15 +292,6 @@ public class Engine {
         hmac.reset();
         hmac.update(data, offset, length);
         hmac.doFinal(data, offset + length);
-    }
-
-    /**
-     * @param messageType
-     * @param buffer
-     */
-    private void cast(byte messageType, ByteBuffer buffer) {
-        // TODO Auto-generated method stub
-
     }
 
     private synchronized boolean checkMac(byte[] data, int start, int length) {
@@ -325,6 +332,29 @@ public class Engine {
         return digests;
     }
 
+    private UUID[] extractIds(SocketAddress sender, ByteBuffer msg) {
+        int count = msg.get();
+        final UUID[] uuids = new UUID[count];
+        for (int i = 0; i < count; i++) {
+            UUID id;
+            try {
+                id = new UUID(msg.getLong(), msg.getLong());
+            } catch (Throwable e) {
+                if (log.isWarnEnabled()) {
+                    log.warn(String.format("Cannot deserialize uuid. Ignoring the uuid: %s\n%s",
+                                           i,
+                                           prettyPrint(sender,
+                                                       getLocalAddress(),
+                                                       msg.array(), msg.limit())),
+                             e);
+                }
+                continue;
+            }
+            uuids[i] = id;
+        }
+        return uuids;
+    }
+
     /**
      * @return
      */
@@ -335,7 +365,7 @@ public class Engine {
     private void handleDigests(InetSocketAddress sender, ByteBuffer buffer) {
         Digest[] digests = extractDigests(sender, buffer);
         if (log.isTraceEnabled()) {
-            log.trace(String.format("Digests from %s are %s", buffer,
+            log.trace(String.format("Digests from %s are %s", sender,
                                     Arrays.toString(digests)));
         }
         Endpoint endpoint = members.get(sender);
@@ -346,7 +376,7 @@ public class Engine {
                 endpoint = newEndpoint;
             }
         }
-        List<Digest> updates = endpoint.getUpdates(digests);
+        List<UUID> updates = endpoint.getUpdates(digests);
         if (!updates.isEmpty()) {
             requestState(sender, updates);
         }
@@ -364,13 +394,18 @@ public class Engine {
         scope.deregister(stateId);
     }
 
-    /**
-     * @param sender
-     * @param buffer
-     */
     private void handleStateRequest(InetSocketAddress sender, ByteBuffer buffer) {
-        // TODO Auto-generated method stub
-
+        UUID[] ids = extractIds(sender, buffer);
+        if (log.isTraceEnabled()) {
+            log.trace(String.format("State request ids from %s are %s", sender,
+                                    Arrays.toString(ids)));
+        }
+        ByteBuffer msg = bufferPool.allocate(MAX_SEG_SIZE);
+        for (UUID id : ids) {
+            ReplicatedState state = localState.get(id);
+            state.writeTo(msg);
+            send(UPDATE, msg, sender);
+        }
     }
 
     private void handleUpdate(InetSocketAddress sender, ByteBuffer buffer) {
@@ -437,15 +472,16 @@ public class Engine {
         }
     }
 
-    private void requestState(InetSocketAddress sender, List<Digest> updates) {
+    private void requestState(InetSocketAddress sender, List<UUID> updates) {
         ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
         buffer.order(ByteOrder.BIG_ENDIAN);
         for (int i = 0; i < updates.size();) {
-            byte count = (byte) min(maxDigests, updates.size() - i);
+            byte count = (byte) min(maxUuids, updates.size() - i);
             buffer.position(MAGIC_BYTE_SIZE);
             buffer.put(count);
-            for (Digest digest : updates.subList(i, i + count)) {
-                digest.writeTo(buffer);
+            for (UUID id : updates.subList(i, i + count)) {
+                buffer.putLong(id.getMostSignificantBits());
+                buffer.putLong(id.getLeastSignificantBits());
             }
             send(STATE_REQUEST, buffer, sender);
             i += count;
@@ -512,7 +548,7 @@ public class Engine {
                 position = buffer.position();
                 Integer.toString(position);
             }
-            cast(DIGESTS, buffer);
+            send(DIGESTS, buffer, groupAddess);
             i += count;
             buffer.clear();
         }

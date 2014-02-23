@@ -28,8 +28,8 @@ import org.slf4j.LoggerFactory;
 import com.hellblazer.utils.fd.FailureDetector;
 
 /**
- * The Endpoint keeps track of the replicated state and the failure detector for
- * remote clients
+ * The Endpoint keeps track of the replicated state timestamps and the failure
+ * detector for remote clients
  * 
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  * 
@@ -54,18 +54,18 @@ public class Endpoint {
         states.put(digest.getId(), digest.getTime());
     }
 
-    public List<Digest> getUpdates(Digest[] digests) {
+    public List<UUID> getUpdates(Digest[] digests) {
         final ReentrantLock myLock = synch;
         myLock.lock();
         try {
-            List<Digest> updates = new ArrayList<>(states.size() + 1);
+            List<UUID> updates = new ArrayList<>(states.size() + 1);
             for (Digest digest : digests) {
                 if (fd != null && digest.equals(Engine.HEARTBEAT)) {
                     fd.record(digest.getTime(), 0);
                 } else {
                     if (!states.containsKey(digest.getId())
                         || digest.getTime() > states.get(digest.getId())) {
-                        updates.add(digest);
+                        updates.add(digest.getId());
                     }
                 }
             }
