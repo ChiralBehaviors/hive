@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.hellblazer.slp.broadcast;
+package com.hellblazer.slp.hive;
 
 import java.io.IOException;
 import java.lang.Thread.UncaughtExceptionHandler;

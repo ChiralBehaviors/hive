@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and 
  * limitations under the License.
  */
-package com.hellblazer.slp.broadcast;
+package com.hellblazer.slp.hive;
 
 /**
  * The communications constants used by the broadcast protocol
@@ -21,21 +21,24 @@ package com.hellblazer.slp.broadcast;
  * 
  */
 public interface Messages {
-    int BYTE_SIZE                = 1;
-    int HEARTBEAT                = 1;
-    int INITIAL_STATE            = 0;
-    int INT_BYTE_SIZE            = 4;
-    int LONG_BYTE_SIZE           = INT_BYTE_SIZE + INT_BYTE_SIZE;
-    int MAGIC                    = 0xCAFEBABE;
-    int MAGIC_BYTE_SIZE          = INT_BYTE_SIZE;
+    int  BYTE_SIZE                = 1;
+    int  INT_BYTE_SIZE            = 4;
+    int  LONG_BYTE_SIZE           = INT_BYTE_SIZE + INT_BYTE_SIZE;
+    int  MAGIC                    = 0xCAFEBABE;
+    int  MAGIC_BYTE_SIZE          = INT_BYTE_SIZE;
     /**
      * MAX_SEG_SIZE is a default maximum packet size. This may be small, but any
      * network will be capable of handling this size so the packet transfer
      * semantics are atomic (no fragmentation in the network).
      */
-    int MAX_SEG_SIZE             = 1500;
+    int  MAX_SEG_SIZE             = 1500;
+    int  MESSAGE_HEADER_BYTE_SIZE = MAGIC_BYTE_SIZE + BYTE_SIZE;
+    int  UUID_BYTE_SIZE           = LONG_BYTE_SIZE + LONG_BYTE_SIZE;
+    int  DIGEST_BYTE_SIZE         = UUID_BYTE_SIZE + LONG_BYTE_SIZE;
 
-    int MESSAGE_HEADER_BYTE_SIZE = MAGIC_BYTE_SIZE + BYTE_SIZE;
-    int UPDATE                   = 2;
-    int UUID_BYTE_SIZE           = LONG_BYTE_SIZE + LONG_BYTE_SIZE;
+    /** Messages **/
+    byte DIGESTS                  = 0;
+    byte UPDATE                   = 1;
+    byte REMOVE                   = 2;
+    byte STATE_REQUEST            = 3;
 }

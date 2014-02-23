@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and 
  * limitations under the License.
  */
-package com.hellblazer.slp.broadcast;
+package com.hellblazer.slp.hive;
 
 import java.nio.ByteBuffer;
 import java.util.UUID;
@@ -22,18 +22,25 @@ import java.util.UUID;
  * 
  */
 public class ReplicatedState {
+    public static byte[] getState(ByteBuffer buffer) {
+        byte[] state = new byte[buffer.remaining()];
+        buffer.get(state);
+        return state;
+    }
+
     private final UUID   id;
     private final byte[] state;
- 
+    private final long   time;
+
     public ReplicatedState(ByteBuffer buffer) {
-        id = new UUID(buffer.getLong(), buffer.getLong());
-        state = new byte[buffer.remaining()];
-        buffer.get(state);
+        this(new UUID(buffer.getLong(), buffer.getLong()), buffer.getLong(),
+             getState(buffer));
     }
- 
-    public ReplicatedState(UUID id, byte[] state) {
+
+    public ReplicatedState(UUID id, long time, byte[] state) {
         this.id = id;
         this.state = state;
+        this.time = time;
     }
 
     /* (non-Javadoc)
@@ -75,6 +82,13 @@ public class ReplicatedState {
         return state;
     }
 
+    /**
+     * @return the time
+     */
+    public long getTime() {
+        return time;
+    }
+
     @Override
     public int hashCode() {
         return id.hashCode();
@@ -105,6 +119,11 @@ public class ReplicatedState {
     public void writeTo(ByteBuffer buffer) {
         buffer.putLong(id.getMostSignificantBits());
         buffer.putLong(id.getLeastSignificantBits());
+        buffer.putLong(time);
         buffer.put(state);
+    }
+
+    public Digest getDigest() {
+        return new Digest(this);
     }
 }

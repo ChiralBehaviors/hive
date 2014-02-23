@@ -14,12 +14,19 @@
  * limitations under the License.
  */
 
-package com.hellblazer.slp.broadcast;
+package com.hellblazer.slp.hive;
 
-import static com.hellblazer.slp.broadcast.Messages.MAGIC;
-import static com.hellblazer.slp.broadcast.Messages.MAGIC_BYTE_SIZE;
-import static com.hellblazer.slp.broadcast.Messages.MAX_SEG_SIZE;
-import static com.hellblazer.slp.broadcast.Messages.MESSAGE_HEADER_BYTE_SIZE;
+import static com.hellblazer.slp.hive.Messages.BYTE_SIZE;
+import static com.hellblazer.slp.hive.Messages.DIGESTS;
+import static com.hellblazer.slp.hive.Messages.DIGEST_BYTE_SIZE;
+import static com.hellblazer.slp.hive.Messages.MAGIC;
+import static com.hellblazer.slp.hive.Messages.MAGIC_BYTE_SIZE;
+import static com.hellblazer.slp.hive.Messages.MAX_SEG_SIZE;
+import static com.hellblazer.slp.hive.Messages.MESSAGE_HEADER_BYTE_SIZE;
+import static com.hellblazer.slp.hive.Messages.REMOVE;
+import static com.hellblazer.slp.hive.Messages.STATE_REQUEST;
+import static com.hellblazer.slp.hive.Messages.UPDATE;
+import static java.lang.Math.min;
 import static java.lang.String.format;
 
 import java.io.ByteArrayOutputStream;
@@ -35,13 +42,16 @@ import java.nio.ByteOrder;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -55,7 +65,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.uuid.NoArgGenerator;
 import com.hellblazer.utils.ByteBufferPool;
 import com.hellblazer.utils.HexDump;
-import com.hellblazer.utils.fd.FailureDetector;
+import com.hellblazer.utils.fd.FailureDetectorFactory;
 
 /**
  * @author hhildebrand
@@ -65,7 +75,6 @@ public class Engine {
     public static final UUID    ALL_STATE                         = new UUID(0,
                                                                              0);
     public static final int     DEFAULT_RECEIVE_BUFFER_MULTIPLIER = 4;
-
     public static final int     DEFAULT_SEND_BUFFER_MULTIPLIER    = 4;
     public static final UUID    HEARTBEAT                         = new UUID(0,
                                                                              1);
@@ -77,7 +86,6 @@ public class Engine {
             (byte) 0xad                                          };
     // Default MAC used strictly for message integrity
     private static String       DEFAULT_MAC_TYPE                  = "HmacMD5";
-    private static final byte[] EMPTY_STATE                       = new byte[0];
     private static final Logger log                               = LoggerFactory.getLogger(Engine.class);
 
     /**
@@ -127,27 +135,31 @@ public class Engine {
         return baos.toString();
     }
 
-    private final ByteBufferPool                       bufferPool = new ByteBufferPool(
-                                                                                       "Broadcast Comms",
-                                                                                       100);
-    private final ScheduledExecutorService             executor;
-    private final int                                  heartbeat_period;
-    private final TimeUnit                             heartbeatUnit;
-    private final Mac                                  hmac;
-    private final UUID                                 id;
-    private final NoArgGenerator                       idGenerator;
-    private final ConcurrentMap<UUID, ReplicatedState> localState = new ConcurrentHashMap<>();
-    private final ConcurrentMap<UUID, FailureDetector> members    = new ConcurrentHashMap<>();
-    private final AtomicBoolean                        running    = new AtomicBoolean();
-    private HiveScope                             scope;
-    private final DatagramSocket                       socket;
+    private final ByteBufferPool                             bufferPool = new ByteBufferPool(
+                                                                                             "Engine Comms",
+                                                                                             100);
+    private final ScheduledExecutorService                   executor;
+    private final FailureDetectorFactory                     fdFactory;
+    private final int                                        heartbeat_period;
+    private ScheduledFuture<?>                               heartbeatTask;
+    private final TimeUnit                                   heartbeatUnit;
+    private final Mac                                        hmac;
+    private final NoArgGenerator                             idGenerator;
+    private final InetSocketAddress                          localAddress;
+    private final ConcurrentMap<UUID, ReplicatedState>       localState = new ConcurrentHashMap<>();
+    private final int                                        maxDigests;
+    private final ConcurrentMap<InetSocketAddress, Endpoint> members    = new ConcurrentHashMap<>();
+    private final AtomicBoolean                              running    = new AtomicBoolean();
+    private HiveScope                                        scope;
+    private final DatagramSocket                             socket;
 
     public Engine(ScheduledExecutorService executor,
-                  NoArgGenerator idGenerator, int heartbeat_period,
-                  TimeUnit heartbeatUnit, DatagramSocket socket,
-                  int receiveBufferMultiplier, int sendBufferMultiplier,
-                  Mac mac, UUID id) throws SocketException {
+                  FailureDetectorFactory fdFactory, NoArgGenerator idGenerator,
+                  int heartbeat_period, TimeUnit heartbeatUnit,
+                  DatagramSocket socket, int receiveBufferMultiplier,
+                  int sendBufferMultiplier, Mac mac) throws SocketException {
         this.executor = executor;
+        this.fdFactory = fdFactory;
         this.idGenerator = idGenerator;
         this.heartbeat_period = heartbeat_period;
         this.heartbeatUnit = heartbeatUnit;
@@ -160,7 +172,12 @@ public class Engine {
             throw e;
         }
         hmac = mac;
-        this.id = id;
+        this.localAddress = new InetSocketAddress(socket.getLocalAddress(),
+                                                  socket.getLocalPort());
+        int payloadByteSize = MAX_SEG_SIZE - MESSAGE_HEADER_BYTE_SIZE
+                              - mac.getMacLength();
+        maxDigests = (payloadByteSize - BYTE_SIZE) // 1 byte for #digests
+                     / DIGEST_BYTE_SIZE;
     }
 
     public void deregister(UUID id) {
@@ -168,21 +185,13 @@ public class Engine {
             throw new NullPointerException(
                                            "replicated state id must not be null");
         }
-        ReplicatedState state = new ReplicatedState(id, EMPTY_STATE);
         synchronized (localState) {
-            localState.put(id, state);
+            localState.remove(id);
         }
         if (log.isDebugEnabled()) {
             log.debug(String.format("Member: %s abandoning replicated state",
                                     getLocalAddress()));
         }
-    }
-
-    /**
-     * @return the id
-     */
-    public UUID getId() {
-        return id;
     }
 
     public int getMaxStateSize() {
@@ -200,7 +209,9 @@ public class Engine {
                                                              getMaxStateSize()));
         }
         UUID id = idGenerator.generate();
-        ReplicatedState state = new ReplicatedState(id, replicatedState);
+        ReplicatedState state = new ReplicatedState(id,
+                                                    System.currentTimeMillis(),
+                                                    replicatedState);
         localState.put(id, state);
         if (log.isDebugEnabled()) {
             log.debug(String.format("Member: %s registering replicated state",
@@ -212,6 +223,8 @@ public class Engine {
     public void start() {
         if (running.compareAndSet(false, true)) {
             Executors.newSingleThreadExecutor().execute(serviceTask());
+            heartbeatTask = executor.schedule(heartbeatTask(),
+                                              heartbeat_period, heartbeatUnit);
         }
     }
 
@@ -221,6 +234,7 @@ public class Engine {
                 log.info(String.format("Terminating UDP Communications on %s",
                                        socket.getLocalSocketAddress()));
             }
+            heartbeatTask.cancel(true);
             socket.close();
             log.info(bufferPool.toString());
         }
@@ -245,7 +259,9 @@ public class Engine {
                                                              replicatedState.length,
                                                              getMaxStateSize()));
         }
-        ReplicatedState state = new ReplicatedState(id, replicatedState);
+        ReplicatedState state = new ReplicatedState(id,
+                                                    System.currentTimeMillis(),
+                                                    replicatedState);
         synchronized (localState) {
             localState.put(id, state);
         }
@@ -260,6 +276,15 @@ public class Engine {
         hmac.reset();
         hmac.update(data, offset, length);
         hmac.doFinal(data, offset + length);
+    }
+
+    /**
+     * @param messageType
+     * @param buffer
+     */
+    private void cast(byte messageType, ByteBuffer buffer) {
+        // TODO Auto-generated method stub
+
     }
 
     private synchronized boolean checkMac(byte[] data, int start, int length) {
@@ -277,12 +302,156 @@ public class Engine {
         return true;
     }
 
+    private Digest[] extractDigests(SocketAddress sender, ByteBuffer msg) {
+        int count = msg.get();
+        final Digest[] digests = new Digest[count];
+        for (int i = 0; i < count; i++) {
+            Digest digest;
+            try {
+                digest = new Digest(msg);
+            } catch (Throwable e) {
+                if (log.isWarnEnabled()) {
+                    log.warn(String.format("Cannot deserialize digest. Ignoring the digest: %s\n%s",
+                                           i,
+                                           prettyPrint(sender,
+                                                       getLocalAddress(),
+                                                       msg.array(), msg.limit())),
+                             e);
+                }
+                continue;
+            }
+            digests[i] = digest;
+        }
+        return digests;
+    }
+
     /**
      * @return
      */
     private InetSocketAddress getLocalAddress() {
+        return localAddress;
+    }
+
+    private void handleDigests(InetSocketAddress sender, ByteBuffer buffer) {
+        Digest[] digests = extractDigests(sender, buffer);
+        if (log.isTraceEnabled()) {
+            log.trace(String.format("Digests from %s are %s", buffer,
+                                    Arrays.toString(digests)));
+        }
+        Endpoint endpoint = members.get(sender);
+        if (endpoint == null) {
+            Endpoint newEndpoint = new Endpoint(fdFactory.create());
+            endpoint = members.putIfAbsent(sender, newEndpoint);
+            if (endpoint == null) {
+                endpoint = newEndpoint;
+            }
+        }
+        List<Digest> updates = endpoint.getUpdates(digests);
+        if (!updates.isEmpty()) {
+            requestState(sender, updates);
+        }
+    }
+
+    private void handleRemove(InetSocketAddress sender, ByteBuffer buffer) {
+        UUID stateId = new UUID(buffer.getLong(), buffer.getLong());
+        Endpoint endpoint = members.get(sender);
+        if (endpoint == null) {
+            log.trace(String.format("Remove %s from unknown member %s",
+                                    stateId, sender));
+            return;
+        }
+        endpoint.remove(stateId);
+        scope.deregister(stateId);
+    }
+
+    /**
+     * @param sender
+     * @param buffer
+     */
+    private void handleStateRequest(InetSocketAddress sender, ByteBuffer buffer) {
         // TODO Auto-generated method stub
-        return null;
+
+    }
+
+    private void handleUpdate(InetSocketAddress sender, ByteBuffer buffer) {
+        final ReplicatedState state;
+        try {
+            state = new ReplicatedState(buffer);
+        } catch (Throwable e) {
+            if (log.isWarnEnabled()) {
+                log.warn("Cannot deserialize state. Ignoring the state.", e);
+            }
+            return;
+        }
+        if (log.isTraceEnabled()) {
+            log.trace(format("Update state from %s is : %s", sender, state));
+        }
+        Endpoint endpoint = new Endpoint(fdFactory.create(), state);
+        if (members.putIfAbsent(sender, endpoint) == null) {
+            scope.register(state.getId(), state.getState());
+        } else {
+            endpoint.update(state.getDigest());
+            scope.update(state.getId(), state.getState());
+        }
+    }
+
+    private Runnable heartbeatTask() {
+        return new Runnable() {
+            @Override
+            public void run() {
+                long now = System.currentTimeMillis();
+                List<Digest> digests = new ArrayList<>();
+                digests.add(new Digest(HEARTBEAT, now));
+                for (ReplicatedState state : localState.values()) {
+                    digests.add(new Digest(state.getId(), state.getTime()));
+                }
+                sendDigests(digests);
+            }
+        };
+    }
+
+    private void processInbound(InetSocketAddress sender, ByteBuffer buffer) {
+        byte msgType = buffer.get();
+        switch (msgType) {
+            case DIGESTS: {
+                handleDigests(sender, buffer);
+                break;
+            }
+            case REMOVE: {
+                handleRemove(sender, buffer);
+                break;
+            }
+            case UPDATE: {
+                handleUpdate(sender, buffer);
+                break;
+            }
+            case STATE_REQUEST: {
+                handleStateRequest(sender, buffer);
+            }
+            default: {
+                if (log.isInfoEnabled()) {
+                    log.info(format("invalid message type: %s from: %s",
+                                    msgType, this));
+                }
+            }
+        }
+    }
+
+    private void requestState(InetSocketAddress sender, List<Digest> updates) {
+        ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
+        buffer.order(ByteOrder.BIG_ENDIAN);
+        for (int i = 0; i < updates.size();) {
+            byte count = (byte) min(maxDigests, updates.size() - i);
+            buffer.position(MAGIC_BYTE_SIZE);
+            buffer.put(count);
+            for (Digest digest : updates.subList(i, i + count)) {
+                digest.writeTo(buffer);
+            }
+            send(STATE_REQUEST, buffer, sender);
+            i += count;
+            buffer.clear();
+        }
+        bufferPool.free(buffer);
     }
 
     private void send(byte msgType, ByteBuffer buffer, SocketAddress target) {
@@ -328,6 +497,26 @@ public class Engine {
                 log.warn("Error sending packet", e);
             }
         }
+    }
+
+    private void sendDigests(List<Digest> digests) {
+        ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
+        buffer.order(ByteOrder.BIG_ENDIAN);
+        for (int i = 0; i < digests.size();) {
+            byte count = (byte) min(maxDigests, digests.size() - i);
+            buffer.position(MAGIC_BYTE_SIZE);
+            buffer.put(count);
+            int position;
+            for (Digest digest : digests.subList(i, i + count)) {
+                digest.writeTo(buffer);
+                position = buffer.position();
+                Integer.toString(position);
+            }
+            cast(DIGESTS, buffer);
+            i += count;
+            buffer.clear();
+        }
+        bufferPool.free(buffer);
     }
 
     private void service() throws IOException {
@@ -392,12 +581,6 @@ public class Engine {
                     }
                 }
                 bufferPool.free(buffer);
-            }
-
-            private void processInbound(InetSocketAddress socketAddress,
-                                        ByteBuffer buffer) {
-                // TODO Auto-generated method stub
-
             }
         });
     }

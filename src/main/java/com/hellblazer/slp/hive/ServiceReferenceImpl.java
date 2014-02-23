@@ -1,4 +1,4 @@
-package com.hellblazer.slp.broadcast;
+package com.hellblazer.slp.hive;
 
 /** (C) Copyright 2014 Chiral Behaviors, All Rights Reserved
  * 
