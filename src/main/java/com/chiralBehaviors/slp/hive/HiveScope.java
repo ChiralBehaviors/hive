@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.hellblazer.slp.hive;
+package com.chiralBehaviors.slp.hive;
 
 import java.io.IOException;
 import java.lang.Thread.UncaughtExceptionHandler;
@@ -54,6 +54,33 @@ import com.hellblazer.slp.ServiceURL;
  * 
  */
 public class HiveScope implements ServiceScope {
+    private class Listener implements EngineListener {
+
+        /* (non-Javadoc)
+         * @see com.hellblazer.slp.hive.EngineListener#deregister(java.util.UUID)
+         */
+        @Override
+        public void deregister(UUID id) {
+            HiveScope.this.deregister(id);
+        }
+
+        /* (non-Javadoc)
+         * @see com.hellblazer.slp.hive.EngineListener#register(java.util.UUID, byte[])
+         */
+        @Override
+        public void register(UUID id, byte[] state) {
+            HiveScope.this.register(id, state);
+        }
+
+        /* (non-Javadoc)
+         * @see com.hellblazer.slp.hive.EngineListener#update(java.util.UUID, byte[])
+         */
+        @Override
+        public void update(UUID id, byte[] state) {
+            HiveScope.this.update(id, state);
+        }
+    }
+
     private static class ListenerRegistration implements
             Comparable<ListenerRegistration> {
         private final ServiceListener listener;
@@ -280,6 +307,7 @@ public class HiveScope implements ServiceScope {
 
     public HiveScope(Engine engine, Executor execService) {
         this.engine = engine;
+        engine.setListener(new Listener());
         executor = execService;
     }
 
@@ -526,7 +554,7 @@ public class HiveScope implements ServiceScope {
     /**
      * @param id
      */
-    protected void deregister(UUID id) {
+    private void deregister(UUID id) {
         ServiceReference reference = services.remove(id);
         if (reference != null) {
             serviceChanged(reference, EventType.UNREGISTERED);
@@ -537,14 +565,14 @@ public class HiveScope implements ServiceScope {
      * @param id
      * @param state
      */
-    protected void register(UUID id, byte[] state) {
+    private void register(UUID id, byte[] state) {
         ServiceReferenceImpl reference = deserialize(id, state);
         services.put(id, reference);
         serviceChanged(reference, EventType.REGISTERED);
     }
 
-    protected void serviceChanged(final ServiceReference reference,
-                                  final EventType type) {
+    private void serviceChanged(final ServiceReference reference,
+                                final EventType type) {
         if (log.isDebugEnabled()) {
             log.debug(String.format("Processing service change of reference %s type %s",
                                     reference, type));
@@ -573,7 +601,7 @@ public class HiveScope implements ServiceScope {
      * @param id
      * @param state
      */
-    protected void update(UUID id, byte[] state) {
+    private void update(UUID id, byte[] state) {
         ServiceReferenceImpl reference = deserialize(id, state);
         services.put(id, reference);
         serviceChanged(reference, EventType.MODIFIED);

@@ -14,19 +14,19 @@
  * limitations under the License.
  */
 
-package com.hellblazer.slp.hive;
+package com.chiralBehaviors.slp.hive;
 
-import static com.hellblazer.slp.hive.Messages.BYTE_SIZE;
-import static com.hellblazer.slp.hive.Messages.DIGESTS;
-import static com.hellblazer.slp.hive.Messages.DIGEST_BYTE_SIZE;
-import static com.hellblazer.slp.hive.Messages.MAGIC;
-import static com.hellblazer.slp.hive.Messages.MAGIC_BYTE_SIZE;
-import static com.hellblazer.slp.hive.Messages.MAX_SEG_SIZE;
-import static com.hellblazer.slp.hive.Messages.MESSAGE_HEADER_BYTE_SIZE;
-import static com.hellblazer.slp.hive.Messages.REMOVE;
-import static com.hellblazer.slp.hive.Messages.STATE_REQUEST;
-import static com.hellblazer.slp.hive.Messages.UPDATE;
-import static com.hellblazer.slp.hive.Messages.UUID_BYTE_SIZE;
+import static com.chiralBehaviors.slp.hive.Messages.BYTE_SIZE;
+import static com.chiralBehaviors.slp.hive.Messages.DIGESTS;
+import static com.chiralBehaviors.slp.hive.Messages.DIGEST_BYTE_SIZE;
+import static com.chiralBehaviors.slp.hive.Messages.MAGIC;
+import static com.chiralBehaviors.slp.hive.Messages.MAGIC_BYTE_SIZE;
+import static com.chiralBehaviors.slp.hive.Messages.MAX_SEG_SIZE;
+import static com.chiralBehaviors.slp.hive.Messages.MESSAGE_HEADER_BYTE_SIZE;
+import static com.chiralBehaviors.slp.hive.Messages.REMOVE;
+import static com.chiralBehaviors.slp.hive.Messages.STATE_REQUEST;
+import static com.chiralBehaviors.slp.hive.Messages.UPDATE;
+import static com.chiralBehaviors.slp.hive.Messages.UUID_BYTE_SIZE;
 import static java.lang.Math.min;
 import static java.lang.String.format;
 
@@ -36,6 +36,8 @@ import java.io.PrintStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
+import java.net.MulticastSocket;
+import java.net.NetworkInterface;
 import java.net.SocketAddress;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
@@ -88,6 +90,42 @@ public class Engine {
     // Default MAC used strictly for message integrity
     private static String       DEFAULT_MAC_TYPE                  = "HmacMD5";
     private static final Logger log                               = LoggerFactory.getLogger(Engine.class);
+
+    public static DatagramSocket connect(InetSocketAddress endpoint)
+                                                                    throws SocketException {
+        DatagramSocket s;
+        try {
+            s = new DatagramSocket(endpoint);
+        } catch (SocketException e) {
+            log.error(format("Unable to bind to: %s", endpoint));
+            throw e;
+        }
+        s.setBroadcast(true);
+        return s;
+    }
+
+    public static MulticastSocket connect(InetSocketAddress endpoint,
+                                          SocketAddress mcastaddr, int ttl,
+                                          NetworkInterface netIf)
+                                                                 throws IOException {
+        MulticastSocket s;
+        try {
+            s = new MulticastSocket(endpoint);
+        } catch (IOException e) {
+            log.error(format("Unable to bind to: %s", endpoint));
+            throw e;
+        }
+        try {
+            s.joinGroup(mcastaddr, netIf);
+        } catch (IOException e) {
+            log.error(format("Unable to join group %s on %s for %s", mcastaddr,
+                             netIf, s));
+            throw e;
+        }
+        s.setTimeToLive(ttl);
+        s.setReuseAddress(true);
+        return s;
+    }
 
     /**
      * @return a default mac, with a fixed key. Used for validation only, no
@@ -142,33 +180,32 @@ public class Engine {
     private final ScheduledExecutorService                   executor;
     private final FailureDetectorFactory                     fdFactory;
     private final InetSocketAddress                          groupAddess;
-    private final int                                        heartbeat_period;
+    private final int                                        heartbeatPeriod;
     private ScheduledFuture<?>                               heartbeatTask;
     private final TimeUnit                                   heartbeatUnit;
     private final Mac                                        hmac;
     private final NoArgGenerator                             idGenerator;
+    private EngineListener                                   listener;
     private final InetSocketAddress                          localAddress;
     private final ConcurrentMap<UUID, ReplicatedState>       localState = new ConcurrentHashMap<>();
     private final int                                        maxDigests;
     private final int                                        maxUuids;
     private final ConcurrentMap<InetSocketAddress, Endpoint> members    = new ConcurrentHashMap<>();
     private final AtomicBoolean                              running    = new AtomicBoolean();
-    private HiveScope                                        scope;
     private final DatagramSocket                             socket;
 
-    public Engine(ScheduledExecutorService executor,
-                  FailureDetectorFactory fdFactory, NoArgGenerator idGenerator,
-                  int heartbeat_period, TimeUnit heartbeatUnit,
+    public Engine(FailureDetectorFactory fdFactory, NoArgGenerator idGenerator,
+                  int heartbeatPeriod, TimeUnit heartbeatUnit,
                   DatagramSocket socket, InetSocketAddress groupAddress,
                   int receiveBufferMultiplier, int sendBufferMultiplier, Mac mac)
                                                                                  throws SocketException {
-        this.executor = executor;
+        executor = Executors.newSingleThreadScheduledExecutor();
         this.fdFactory = fdFactory;
         this.idGenerator = idGenerator;
-        this.heartbeat_period = heartbeat_period;
+        this.heartbeatPeriod = heartbeatPeriod;
         this.heartbeatUnit = heartbeatUnit;
         this.socket = socket;
-        this.groupAddess = groupAddress;
+        groupAddess = groupAddress;
         try {
             socket.setReceiveBufferSize(MAX_SEG_SIZE * receiveBufferMultiplier);
             socket.setSendBufferSize(MAX_SEG_SIZE * sendBufferMultiplier);
@@ -177,8 +214,8 @@ public class Engine {
             throw e;
         }
         hmac = mac;
-        this.localAddress = new InetSocketAddress(socket.getLocalAddress(),
-                                                  socket.getLocalPort());
+        localAddress = new InetSocketAddress(socket.getLocalAddress(),
+                                             socket.getLocalPort());
         int payloadByteSize = MAX_SEG_SIZE - MESSAGE_HEADER_BYTE_SIZE
                               - mac.getMacLength();
         maxDigests = (payloadByteSize - BYTE_SIZE) // 1 byte for #digests
@@ -199,6 +236,10 @@ public class Engine {
             log.debug(String.format("Member: %s abandoning replicated state",
                                     getLocalAddress()));
         }
+    }
+
+    public InetSocketAddress getLocalAddress() {
+        return localAddress;
     }
 
     public int getMaxStateSize() {
@@ -227,11 +268,15 @@ public class Engine {
         return id;
     }
 
+    public void setListener(EngineListener listener) {
+        this.listener = listener;
+    }
+
     public void start() {
         if (running.compareAndSet(false, true)) {
             Executors.newSingleThreadExecutor().execute(serviceTask());
-            heartbeatTask = executor.schedule(heartbeatTask(),
-                                              heartbeat_period, heartbeatUnit);
+            heartbeatTask = executor.schedule(heartbeatTask(), heartbeatPeriod,
+                                              heartbeatUnit);
         }
     }
 
@@ -355,13 +400,6 @@ public class Engine {
         return uuids;
     }
 
-    /**
-     * @return
-     */
-    private InetSocketAddress getLocalAddress() {
-        return localAddress;
-    }
-
     private void handleDigests(InetSocketAddress sender, ByteBuffer buffer) {
         Digest[] digests = extractDigests(sender, buffer);
         if (log.isTraceEnabled()) {
@@ -391,7 +429,7 @@ public class Engine {
             return;
         }
         endpoint.remove(stateId);
-        scope.deregister(stateId);
+        listener.deregister(stateId);
     }
 
     private void handleStateRequest(InetSocketAddress sender, ByteBuffer buffer) {
@@ -423,10 +461,10 @@ public class Engine {
         }
         Endpoint endpoint = new Endpoint(fdFactory.create(), state);
         if (members.putIfAbsent(sender, endpoint) == null) {
-            scope.register(state.getId(), state.getState());
+            listener.register(state.getId(), state.getState());
         } else {
             endpoint.update(state.getDigest());
-            scope.update(state.getId(), state.getState());
+            listener.update(state.getId(), state.getState());
         }
     }
 
@@ -648,9 +686,5 @@ public class Engine {
                 }
             }
         };
-    }
-
-    protected void setScope(HiveScope scope) {
-        this.scope = scope;
     }
 }

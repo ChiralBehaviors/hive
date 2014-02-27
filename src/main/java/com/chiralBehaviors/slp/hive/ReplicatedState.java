@@ -12,48 +12,35 @@
  * See the License for the specific language governing permissions and 
  * limitations under the License.
  */
-package com.hellblazer.slp.hive;
+package com.chiralBehaviors.slp.hive;
 
-import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.UUID;
 
 /**
- * Contains information about a specified list of Endpoints and the largest
- * version of the state they have generated as known by the local endpoint.
- * 
- * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
+ * @author hhildebrand
  * 
  */
-public class Digest implements Comparable<Digest> {
-
-    private final UUID id;
-    private final long time;
-
-    public Digest(ByteBuffer msg) throws UnknownHostException {
-        id = new UUID(msg.getLong(), msg.getLong());
-        time = msg.getLong();
+public class ReplicatedState {
+    public static byte[] getState(ByteBuffer buffer) {
+        byte[] state = new byte[buffer.remaining()];
+        buffer.get(state);
+        return state;
     }
 
-    public Digest(ReplicatedState state) {
-        this(state.getId(), state.getTime());
+    private final UUID   id;
+    private final byte[] state;
+    private final long   time;
+
+    public ReplicatedState(ByteBuffer buffer) {
+        this(new UUID(buffer.getLong(), buffer.getLong()), buffer.getLong(),
+             getState(buffer));
     }
 
-    public Digest(UUID id, long diffTime) {
+    public ReplicatedState(UUID id, long time, byte[] state) {
         this.id = id;
-        time = diffTime;
-    }
-
-    /* (non-Javadoc)
-     * @see java.lang.Comparable#compareTo(java.lang.Object)
-     */
-    @Override
-    public int compareTo(Digest o) {
-        int uuidCompare = id.compareTo(o.id);
-        if (uuidCompare != 0) {
-            return uuidCompare;
-        }
-        return Long.valueOf(time).compareTo(Long.valueOf(o.time));
+        this.state = state;
+        this.time = time;
     }
 
     /* (non-Javadoc)
@@ -70,15 +57,12 @@ public class Digest implements Comparable<Digest> {
         if (getClass() != obj.getClass()) {
             return false;
         }
-        Digest other = (Digest) obj;
+        ReplicatedState other = (ReplicatedState) obj;
         if (id == null) {
             if (other.id != null) {
                 return false;
             }
         } else if (!id.equals(other.id)) {
-            return false;
-        }
-        if (time != other.time) {
             return false;
         }
         return true;
@@ -91,34 +75,55 @@ public class Digest implements Comparable<Digest> {
         return id;
     }
 
+    /**
+     * @return the state
+     */
+    public byte[] getState() {
+        return state;
+    }
+
+    /**
+     * @return the time
+     */
     public long getTime() {
         return time;
     }
 
-    /* (non-Javadoc)
-     * @see java.lang.Object#hashCode()
-     */
     @Override
     public int hashCode() {
-        final int prime = 31;
-        int result = 1;
-        result = prime * result + (id == null ? 0 : id.hashCode());
-        result = prime * result + (int) (time ^ time >>> 32);
-        return result;
+        return id.hashCode();
+    }
+
+    public boolean isDeleted() {
+        return state.length == 0 && !isHeartbeat();
+    }
+
+    public boolean isEmpty() {
+        return state.length == 0;
+    }
+
+    public boolean isHeartbeat() {
+        return Engine.HEARTBEAT.equals(id);
+    }
+
+    public boolean isNotifiable() {
+        return state.length > 0 && !isHeartbeat();
     }
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder();
-        sb.append(id);
-        sb.append(":");
-        sb.append(time);
-        return sb.toString();
+        return String.format("ReplicatedState [id=%s,size=%s]", id,
+                             state.length);
     }
 
     public void writeTo(ByteBuffer buffer) {
         buffer.putLong(id.getMostSignificantBits());
         buffer.putLong(id.getLeastSignificantBits());
         buffer.putLong(time);
+        buffer.put(state);
+    }
+
+    public Digest getDigest() {
+        return new Digest(this);
     }
 }

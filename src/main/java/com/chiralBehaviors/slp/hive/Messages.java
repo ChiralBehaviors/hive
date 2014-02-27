@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and 
  * limitations under the License.
  */
-package com.hellblazer.slp.hive;
+package com.chiralBehaviors.slp.hive;
 
 /**
  * The communications constants used by the broadcast protocol

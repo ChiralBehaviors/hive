@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and 
  * limitations under the License.
  */
-package com.hellblazer.slp.hive;
+package com.chiralBehaviors.slp.hive;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -42,6 +42,7 @@ public class Endpoint {
     private final FailureDetector fd;
     private final Map<UUID, Long> states    = new HashMap<>();
     private final AtomicInteger   suspected = new AtomicInteger(0);
+
     private final ReentrantLock   synch     = new ReentrantLock();
 
     public Endpoint(FailureDetector fd) {
