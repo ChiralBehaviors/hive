@@ -89,39 +89,24 @@ public class Engine {
     private static String       DEFAULT_MAC_TYPE                  = "HmacMD5";
     private static final Logger log                               = LoggerFactory.getLogger(Engine.class);
 
-    public static DatagramSocket connect(InetSocketAddress endpoint)
-                                                                    throws SocketException {
-        DatagramSocket s;
-        try {
-            s = new DatagramSocket(endpoint);
-        } catch (SocketException e) {
-            log.error(format("Unable to bind to: %s", endpoint));
-            throw e;
-        }
-        s.setBroadcast(true);
-        return s;
-    }
-
-    public static MulticastSocket connect(InetSocketAddress endpoint,
-                                          SocketAddress mcastaddr, int ttl,
+    public static MulticastSocket connect(InetSocketAddress mcastaddr, int ttl,
                                           NetworkInterface netIf)
                                                                  throws IOException {
         MulticastSocket s;
         try {
-            s = new MulticastSocket(endpoint);
+            s = new MulticastSocket(mcastaddr.getPort());
         } catch (IOException e) {
-            log.error(format("Unable to bind to: %s", endpoint));
+            log.error(format("Unable to bind multicast socket"), e);
             throw e;
         }
         try {
-            s.joinGroup(mcastaddr, netIf);
+            s.joinGroup(mcastaddr.getAddress());
         } catch (IOException e) {
             log.error(format("Unable to join group %s on %s for %s", mcastaddr,
                              netIf, s));
             throw e;
         }
         s.setTimeToLive(ttl);
-        s.setReuseAddress(true);
         return s;
     }
 
@@ -220,6 +205,18 @@ public class Engine {
                      / DIGEST_BYTE_SIZE;
         maxUuids = (payloadByteSize - BYTE_SIZE) // 1 byte for #uuids
                    / UUID_BYTE_SIZE;
+    }
+
+    public Engine(FailureDetectorFactory fdFactory,
+                  NoArgGenerator timeBasedGenerator, int heartbeatPeriod,
+                  TimeUnit heartbeatUnit, int receiveBufferMultiplier,
+                  int sendBufferMultiplier, InetSocketAddress groupAddress,
+                  NetworkInterface nintf, int ttl, Mac mac)
+                                                           throws SocketException,
+                                                           IOException {
+        this(fdFactory, timeBasedGenerator, heartbeatPeriod, heartbeatUnit,
+             connect(groupAddress, ttl, nintf), groupAddress,
+             receiveBufferMultiplier, sendBufferMultiplier, mac);
     }
 
     public void deregister(UUID id) {
@@ -526,7 +523,10 @@ public class Engine {
         bufferPool.free(buffer);
     }
 
-    private void send(byte msgType, ByteBuffer buffer, SocketAddress target) {
+    private void send(byte msgType, ByteBuffer buffer, InetSocketAddress target) {
+        if (target.getPort() == 0) {
+
+        }
         if (socket.isClosed()) {
             log.trace(String.format("Sending on a closed socket"));
             return;
@@ -548,6 +548,8 @@ public class Engine {
             return;
         }
         try {
+            log.info(String.format("Sending packet to %s from %s", target,
+                                   socket.getLocalSocketAddress()));
             DatagramPacket packet = new DatagramPacket(bytes, totalLength,
                                                        target);
             if (log.isTraceEnabled()) {
@@ -662,7 +664,7 @@ public class Engine {
             @Override
             public void run() {
                 if (log.isInfoEnabled()) {
-                    log.info(String.format("UDP Gossip communications started on %s",
+                    log.info(String.format("UDP muticast communications started on %s",
                                            getLocalAddress()));
                 }
                 while (running.get()) {

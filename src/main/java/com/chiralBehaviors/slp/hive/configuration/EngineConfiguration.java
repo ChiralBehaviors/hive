@@ -16,12 +16,14 @@
 
 package com.chiralBehaviors.slp.hive.configuration;
 
+import java.io.IOException;
+import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
-import java.net.SocketAddress;
 import java.net.SocketException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.Enumeration;
 import java.util.concurrent.TimeUnit;
 
 import javax.crypto.Mac;
@@ -38,22 +40,34 @@ import com.hellblazer.utils.fd.impl.AdaptiveFailureDetectorFactory;
  * 
  */
 public class EngineConfiguration {
-    public SocketAddress          multicastAddr;
-    public InetSocketAddress      endpoint                = new InetSocketAddress(
-                                                                                  0);
+    public static NetworkInterface getDefaultNetworkInterface()
+                                                               throws SocketException {
+        NetworkInterface iface = NetworkInterface.getByIndex(1);
+        if (iface == null) {
+            throw new IllegalArgumentException(
+                                               "Cannot find the default network interface ");
+        }
+        return iface;
+    }
+
     public FailureDetectorFactory fdFactory;
     public int                    heartbeatPeriod         = 3;
     public TimeUnit               heartbeatUnit           = TimeUnit.SECONDS;
     public String                 hmac                    = "HmacMD5";
     public String                 hmacKey                 = "I0WDrSNGg60jRYOtI0WDrQ==";
-    public String                 networkInterface;
-    public long                   quarantineDelay         = TimeUnit.SECONDS.toMillis(30);
+    public InetSocketAddress      group                   = new InetSocketAddress(
+                                                                                  "233.1.2.30",
+                                                                                  1966);
+    public String                 multicastInterface;
     public int                    receiveBufferMultiplier = Engine.DEFAULT_RECEIVE_BUFFER_MULTIPLIER;
     public int                    sendBufferMultiplier    = Engine.DEFAULT_SEND_BUFFER_MULTIPLIER;
+    public int                    ttl                     = 1;
 
-    public Engine construct() throws SocketException {
+    public Engine construct() throws IOException {
+        DatagramSocket socket = Engine.connect(group, ttl,
+                                               getNetworkInterface());
         return new Engine(getFdFactory(), Generators.timeBasedGenerator(),
-                          heartbeatPeriod, heartbeatUnit, null, null,
+                          heartbeatPeriod, heartbeatUnit, socket, group,
                           receiveBufferMultiplier, sendBufferMultiplier,
                           getMac());
     }
@@ -93,21 +107,21 @@ public class EngineConfiguration {
     }
 
     public NetworkInterface getNetworkInterface() throws SocketException {
-        NetworkInterface iface = NetworkInterface.getByName(networkInterface);
+        if (multicastInterface == null) {
+            for (Enumeration<NetworkInterface> intfs = NetworkInterface.getNetworkInterfaces(); intfs.hasMoreElements();) {
+                NetworkInterface intf = intfs.nextElement();
+                if (intf.supportsMulticast()) {
+                    return intf;
+                }
+            }
+            throw new IllegalStateException(
+                                            "No interface supporting multicast was discovered");
+        }
+        NetworkInterface iface = NetworkInterface.getByName(multicastInterface);
         if (iface == null) {
             throw new IllegalArgumentException(
                                                String.format("Cannot find network interface: %s ",
-                                                             networkInterface));
-        }
-        return iface;
-    }
-
-    public static NetworkInterface getDefaultNetworkInterface()
-                                                               throws SocketException {
-        NetworkInterface iface = NetworkInterface.getByIndex(1);
-        if (iface == null) {
-            throw new IllegalArgumentException(
-                                               "Cannot find the default network interface ");
+                                                             multicastInterface));
         }
         return iface;
     }

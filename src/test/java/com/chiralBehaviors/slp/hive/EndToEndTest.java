@@ -17,7 +17,7 @@ package com.chiralBehaviors.slp.hive;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.net.SocketException;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -107,7 +107,7 @@ public class EndToEndTest {
 
     @Test
     public void testEnd2End() throws Exception {
-        int membership = 16;
+        int membership = 2;
         stateIds = new UUID[membership];
 
         Receiver[] receivers = new Receiver[membership];
@@ -150,10 +150,11 @@ public class EndToEndTest {
     }
 
     protected Engine createDefaultCommunications(EngineListener receiver)
-                                                                         throws SocketException {
+                                                                         throws IOException {
         EngineConfiguration config = new EngineConfiguration();
         Engine engine = config.construct();
         engine.setListener(receiver);
+        engine.start();
         return engine;
     }
 
