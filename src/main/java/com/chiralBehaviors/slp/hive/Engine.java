@@ -75,12 +75,10 @@ import com.hellblazer.utils.fd.FailureDetectorFactory;
  * 
  */
 public class Engine {
-    public static final UUID    ALL_STATE                         = new UUID(0,
-                                                                             0);
     public static final int     DEFAULT_RECEIVE_BUFFER_MULTIPLIER = 4;
     public static final int     DEFAULT_SEND_BUFFER_MULTIPLIER    = 4;
     public static final UUID    HEARTBEAT                         = new UUID(0,
-                                                                             1);
+                                                                             0);
     // Default MAC key used strictly for message integrity
     private static byte[]       DEFAULT_KEY_DATA                  = {
             (byte) 0x23, (byte) 0x45, (byte) 0x83, (byte) 0xad, (byte) 0x23,

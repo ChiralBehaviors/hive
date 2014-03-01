@@ -31,7 +31,7 @@ public class EngineModule extends FdFactoryModule {
     private static final long serialVersionUID = 1L;
 
     public EngineModule() {
-        super("GossipModule");
+        super("Engine Module");
     }
 
     @Override
