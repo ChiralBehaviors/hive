@@ -16,11 +16,11 @@
 
 package com.chiralBehaviors.slp.hive;
 
-import static com.chiralBehaviors.slp.hive.Messages.*;
+import static com.chiralBehaviors.slp.hive.Messages.BYTE_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.DIGESTS;
 import static com.chiralBehaviors.slp.hive.Messages.DIGEST_BYTE_SIZE;
-import static com.chiralBehaviors.slp.hive.Messages.DIGEST_HEADER_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MAGIC;
+import static com.chiralBehaviors.slp.hive.Messages.MAGIC_BYTE_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MAX_SEG_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MESSAGE_HEADER_BYTE_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.REMOVE;
@@ -165,30 +165,12 @@ public class Engine {
         return sb.toString();
     }
 
-    public static InetSocketAddress readSocketAddress(ByteBuffer buffer)
-                                                                        throws UnknownHostException {
-        int port = buffer.getInt();
-        byte[] address = new byte[buffer.get()];
-        buffer.get(address);
-        buffer.position(DIGEST_HEADER_SIZE);
-        InetAddress inetAddress = InetAddress.getByAddress(address);
-        return new InetSocketAddress(inetAddress, port);
-    }
-
     public static String toHex(byte[] data, int offset, int length) {
         ByteArrayOutputStream baos = new ByteArrayOutputStream(1024);
         PrintStream stream = new PrintStream(baos);
         HexDump.hexdump(stream, data, offset, length);
         stream.close();
         return baos.toString();
-    }
-
-    public static void write(InetSocketAddress address, ByteBuffer buffer) {
-        byte[] bytes = address.getAddress().getAddress();
-        buffer.putInt(address.getPort());
-        buffer.put((byte) bytes.length);
-        buffer.put(bytes);
-        buffer.position(DIGEST_HEADER_SIZE);
     }
 
     private final ByteBufferPool                             bufferPool = new ByteBufferPool(
@@ -234,7 +216,7 @@ public class Engine {
             throw e;
         }
         hmac = mac;
-        int payloadByteSize = MAX_SEG_SIZE - DIGEST_HEADER_SIZE
+        int payloadByteSize = MAX_SEG_SIZE - MESSAGE_HEADER_BYTE_SIZE
                               - mac.getMacLength();
         maxDigests = (payloadByteSize - BYTE_SIZE) // 1 byte for #digests
                      / DIGEST_BYTE_SIZE;
@@ -321,10 +303,11 @@ public class Engine {
         if (running.compareAndSet(true, false)) {
             if (log.isInfoEnabled()) {
                 log.info(String.format("Terminating UDP Communications on %s",
-                                       multicastSocket.getLocalSocketAddress()));
+                                       localAddress));
             }
             heartbeatTask.cancel(true);
             multicastSocket.close();
+            p2pSocket.close();
             log.info(bufferPool.toString());
         }
     }
@@ -363,7 +346,7 @@ public class Engine {
         buffer.position(MESSAGE_HEADER_BYTE_SIZE);
         try {
             state.writeTo(buffer);
-            send(UPDATE, buffer, groupAddess, multicastSocket);
+            send(UPDATE, buffer, groupAddess);
         } finally {
             bufferPool.free(buffer);
         }
@@ -439,8 +422,7 @@ public class Engine {
 
     private void handleDigests(InetSocketAddress sender, ByteBuffer buffer)
                                                                            throws UnknownHostException {
-        InetSocketAddress p2p = readSocketAddress(buffer);
-        if (p2p.equals(localAddress)) {
+        if (sender.equals(localAddress)) {
             if (log.isTraceEnabled()) {
                 log.trace(String.format("ignoring digests received from self on %s",
                                         localAddress));
@@ -452,14 +434,14 @@ public class Engine {
             log.trace(String.format("Digests from %s are %s", sender,
                                     Arrays.toString(digests)));
         }
-        Endpoint endpoint = members.get(p2p);
+        Endpoint endpoint = members.get(sender);
         if (endpoint == null) {
             Endpoint newEndpoint = new Endpoint(fdFactory.create());
             endpoint = members.putIfAbsent(sender, newEndpoint);
             if (endpoint == null) {
-                if (log.isInfoEnabled()) {
-                    log.info(String.format("Discovered %s on %s", sender,
-                                           localAddress));
+                if (log.isDebugEnabled()) {
+                    log.debug(String.format("Discovered %s on %s", sender,
+                                            localAddress));
                 }
                 endpoint = newEndpoint;
             }
@@ -470,7 +452,7 @@ public class Engine {
                 log.trace(String.format("Sending updates %s to %s from %s",
                                         updates, sender, localAddress));
             }
-            requestState(p2p, updates);
+            requestState(sender, updates);
         }
     }
 
@@ -503,7 +485,7 @@ public class Engine {
                 continue;
             }
             state.writeTo(msg);
-            send(UPDATE, msg, sender, p2pSocket);
+            send(UPDATE, msg, sender);
         }
     }
 
@@ -584,16 +566,15 @@ public class Engine {
                 buffer.putLong(id.getMostSignificantBits());
                 buffer.putLong(id.getLeastSignificantBits());
             }
-            send(STATE_REQUEST, buffer, sender, p2pSocket);
+            send(STATE_REQUEST, buffer, sender);
             i += count;
             buffer.clear();
         }
         bufferPool.free(buffer);
     }
 
-    private void send(byte msgType, ByteBuffer buffer,
-                      InetSocketAddress target, DatagramSocket socket) {
-        if (socket.isClosed()) {
+    private void send(byte msgType, ByteBuffer buffer, InetSocketAddress target) {
+        if (p2pSocket.isClosed()) {
             log.trace(String.format("Sending on a closed socket"));
             return;
         }
@@ -614,8 +595,6 @@ public class Engine {
             return;
         }
         try {
-            log.info(String.format("Sending packet to %s from %s", target,
-                                   socket.getLocalSocketAddress()));
             DatagramPacket packet = new DatagramPacket(bytes, totalLength,
                                                        target);
             if (log.isTraceEnabled()) {
@@ -624,7 +603,7 @@ public class Engine {
                                         prettyPrint(getLocalAddress(), target,
                                                     buffer.array(), totalLength)));
             }
-            socket.send(packet);
+            p2pSocket.send(packet);
         } catch (SocketException e) {
             if (!"Socket is closed".equals(e.getMessage())
                 && !"Bad file descriptor".equals(e.getMessage())) {
@@ -645,12 +624,11 @@ public class Engine {
         for (int i = 0; i < digests.size();) {
             byte count = (byte) min(maxDigests, digests.size() - i);
             buffer.position(MESSAGE_HEADER_BYTE_SIZE);
-            write(localAddress, buffer);
             buffer.put(count);
             for (Digest digest : digests.subList(i, i + count)) {
                 digest.writeTo(buffer);
             }
-            send(DIGESTS, buffer, groupAddess, multicastSocket);
+            send(DIGESTS, buffer, groupAddess);
             i += count;
             buffer.clear();
         }
