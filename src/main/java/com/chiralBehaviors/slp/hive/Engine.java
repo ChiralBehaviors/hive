@@ -16,11 +16,11 @@
 
 package com.chiralBehaviors.slp.hive;
 
-import static com.chiralBehaviors.slp.hive.Messages.BYTE_SIZE;
+import static com.chiralBehaviors.slp.hive.Messages.*;
 import static com.chiralBehaviors.slp.hive.Messages.DIGESTS;
 import static com.chiralBehaviors.slp.hive.Messages.DIGEST_BYTE_SIZE;
+import static com.chiralBehaviors.slp.hive.Messages.DIGEST_HEADER_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MAGIC;
-import static com.chiralBehaviors.slp.hive.Messages.MAGIC_BYTE_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MAX_SEG_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MESSAGE_HEADER_BYTE_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.REMOVE;
@@ -35,11 +35,14 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.InterfaceAddress;
 import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.SocketAddress;
 import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.InvalidKeyException;
@@ -48,6 +51,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -92,15 +96,27 @@ public class Engine {
     public static MulticastSocket connect(InetSocketAddress mcastaddr, int ttl,
                                           NetworkInterface netIf)
                                                                  throws IOException {
-        MulticastSocket s;
+        MulticastSocket s = null;
         try {
-            s = new MulticastSocket(mcastaddr.getPort());
+            for (InterfaceAddress address : netIf.getInterfaceAddresses()) {
+                InetAddress ip = address.getAddress();
+                if (mcastaddr.getAddress().getClass().equals(ip.getClass())) {
+                    s = new MulticastSocket(
+                                            new InetSocketAddress(
+                                                                  mcastaddr.getPort()));
+                    break;
+                }
+            }
+            if (s == null) {
+                throw new IllegalStateException(
+                                                "Cannot find a suitable internet address");
+            }
         } catch (IOException e) {
             log.error(format("Unable to bind multicast socket"), e);
             throw e;
         }
         try {
-            s.joinGroup(mcastaddr.getAddress());
+            s.joinGroup(mcastaddr, netIf);
         } catch (IOException e) {
             log.error(format("Unable to join group %s on %s for %s", mcastaddr,
                              netIf, s));
@@ -149,12 +165,30 @@ public class Engine {
         return sb.toString();
     }
 
+    public static InetSocketAddress readSocketAddress(ByteBuffer buffer)
+                                                                        throws UnknownHostException {
+        int port = buffer.getInt();
+        byte[] address = new byte[buffer.get()];
+        buffer.get(address);
+        buffer.position(DIGEST_HEADER_SIZE);
+        InetAddress inetAddress = InetAddress.getByAddress(address);
+        return new InetSocketAddress(inetAddress, port);
+    }
+
     public static String toHex(byte[] data, int offset, int length) {
         ByteArrayOutputStream baos = new ByteArrayOutputStream(1024);
         PrintStream stream = new PrintStream(baos);
         HexDump.hexdump(stream, data, offset, length);
         stream.close();
         return baos.toString();
+    }
+
+    public static void write(InetSocketAddress address, ByteBuffer buffer) {
+        byte[] bytes = address.getAddress().getAddress();
+        buffer.putInt(address.getPort());
+        buffer.put((byte) bytes.length);
+        buffer.put(bytes);
+        buffer.position(DIGEST_HEADER_SIZE);
     }
 
     private final ByteBufferPool                             bufferPool = new ByteBufferPool(
@@ -174,20 +208,23 @@ public class Engine {
     private final int                                        maxDigests;
     private final int                                        maxUuids;
     private final ConcurrentMap<InetSocketAddress, Endpoint> members    = new ConcurrentHashMap<>();
+    private final MulticastSocket                            multicastSocket;
+
+    private final DatagramSocket                             p2pSocket;
+
     private final AtomicBoolean                              running    = new AtomicBoolean();
-    private final DatagramSocket                             socket;
 
     public Engine(FailureDetectorFactory fdFactory, NoArgGenerator idGenerator,
                   int heartbeatPeriod, TimeUnit heartbeatUnit,
-                  DatagramSocket socket, InetSocketAddress groupAddress,
-                  int receiveBufferMultiplier, int sendBufferMultiplier, Mac mac)
-                                                                                 throws SocketException {
+                  MulticastSocket socket, InetSocketAddress groupAddress,
+                  int receiveBufferMultiplier, int sendBufferMultiplier,
+                  Mac mac, NetworkInterface iface) throws SocketException {
         executor = Executors.newSingleThreadScheduledExecutor();
         this.fdFactory = fdFactory;
         this.idGenerator = idGenerator;
         this.heartbeatPeriod = heartbeatPeriod;
         this.heartbeatUnit = heartbeatUnit;
-        this.socket = socket;
+        multicastSocket = socket;
         groupAddess = groupAddress;
         try {
             socket.setReceiveBufferSize(MAX_SEG_SIZE * receiveBufferMultiplier);
@@ -197,26 +234,28 @@ public class Engine {
             throw e;
         }
         hmac = mac;
-        localAddress = new InetSocketAddress(socket.getLocalAddress(),
-                                             socket.getLocalPort());
-        int payloadByteSize = MAX_SEG_SIZE - MESSAGE_HEADER_BYTE_SIZE
+        int payloadByteSize = MAX_SEG_SIZE - DIGEST_HEADER_SIZE
                               - mac.getMacLength();
         maxDigests = (payloadByteSize - BYTE_SIZE) // 1 byte for #digests
                      / DIGEST_BYTE_SIZE;
         maxUuids = (payloadByteSize - BYTE_SIZE) // 1 byte for #uuids
                    / UUID_BYTE_SIZE;
-    }
-
-    public Engine(FailureDetectorFactory fdFactory,
-                  NoArgGenerator timeBasedGenerator, int heartbeatPeriod,
-                  TimeUnit heartbeatUnit, int receiveBufferMultiplier,
-                  int sendBufferMultiplier, InetSocketAddress groupAddress,
-                  NetworkInterface nintf, int ttl, Mac mac)
-                                                           throws SocketException,
-                                                           IOException {
-        this(fdFactory, timeBasedGenerator, heartbeatPeriod, heartbeatUnit,
-             connect(groupAddress, ttl, nintf), groupAddress,
-             receiveBufferMultiplier, sendBufferMultiplier, mac);
+        InetAddress bind = null;
+        for (Enumeration<InetAddress> addresses = iface.getInetAddresses(); addresses.hasMoreElements();) {
+            InetAddress address = addresses.nextElement();
+            if (address.getClass().equals(groupAddress.getAddress().getClass())) {
+                bind = address;
+                break;
+            }
+        }
+        if (bind == null) {
+            throw new IllegalArgumentException(
+                                               String.format("No matching address for %s found on %s",
+                                                             groupAddress,
+                                                             iface));
+        }
+        p2pSocket = new DatagramSocket(new InetSocketAddress(bind, 0));
+        localAddress = (InetSocketAddress) p2pSocket.getLocalSocketAddress();
     }
 
     public void deregister(UUID id) {
@@ -269,7 +308,10 @@ public class Engine {
 
     public void start() {
         if (running.compareAndSet(false, true)) {
-            Executors.newSingleThreadExecutor().execute(serviceTask());
+            Executors.newSingleThreadExecutor().execute(serviceTask(multicastSocket,
+                                                                    "multicast"));
+            Executors.newSingleThreadExecutor().execute(serviceTask(p2pSocket,
+                                                                    "p2p"));
             heartbeatTask = executor.schedule(heartbeatTask(), heartbeatPeriod,
                                               heartbeatUnit);
         }
@@ -279,10 +321,10 @@ public class Engine {
         if (running.compareAndSet(true, false)) {
             if (log.isInfoEnabled()) {
                 log.info(String.format("Terminating UDP Communications on %s",
-                                       socket.getLocalSocketAddress()));
+                                       multicastSocket.getLocalSocketAddress()));
             }
             heartbeatTask.cancel(true);
-            socket.close();
+            multicastSocket.close();
             log.info(bufferPool.toString());
         }
     }
@@ -318,10 +360,10 @@ public class Engine {
         }
         ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
         buffer.order(ByteOrder.BIG_ENDIAN);
-        buffer.position(MAGIC_BYTE_SIZE);
+        buffer.position(MESSAGE_HEADER_BYTE_SIZE);
         try {
             state.writeTo(buffer);
-            send(UPDATE, buffer, groupAddess);
+            send(UPDATE, buffer, groupAddess, multicastSocket);
         } finally {
             bufferPool.free(buffer);
         }
@@ -395,23 +437,40 @@ public class Engine {
         return uuids;
     }
 
-    private void handleDigests(InetSocketAddress sender, ByteBuffer buffer) {
+    private void handleDigests(InetSocketAddress sender, ByteBuffer buffer)
+                                                                           throws UnknownHostException {
+        InetSocketAddress p2p = readSocketAddress(buffer);
+        if (p2p.equals(localAddress)) {
+            if (log.isTraceEnabled()) {
+                log.trace(String.format("ignoring digests received from self on %s",
+                                        localAddress));
+            }
+            return;
+        }
         Digest[] digests = extractDigests(sender, buffer);
         if (log.isTraceEnabled()) {
             log.trace(String.format("Digests from %s are %s", sender,
                                     Arrays.toString(digests)));
         }
-        Endpoint endpoint = members.get(sender);
+        Endpoint endpoint = members.get(p2p);
         if (endpoint == null) {
             Endpoint newEndpoint = new Endpoint(fdFactory.create());
             endpoint = members.putIfAbsent(sender, newEndpoint);
             if (endpoint == null) {
+                if (log.isInfoEnabled()) {
+                    log.info(String.format("Discovered %s on %s", sender,
+                                           localAddress));
+                }
                 endpoint = newEndpoint;
             }
         }
         List<UUID> updates = endpoint.getUpdates(digests);
         if (!updates.isEmpty()) {
-            requestState(sender, updates);
+            if (log.isTraceEnabled()) {
+                log.trace(String.format("Sending updates %s to %s from %s",
+                                        updates, sender, localAddress));
+            }
+            requestState(p2p, updates);
         }
     }
 
@@ -435,9 +494,16 @@ public class Engine {
         }
         ByteBuffer msg = bufferPool.allocate(MAX_SEG_SIZE);
         for (UUID id : ids) {
+            msg.clear();
+            msg.position(MESSAGE_HEADER_BYTE_SIZE);
             ReplicatedState state = localState.get(id);
+            if (state == null) {
+                log.warn(String.format("unable to find state %s on %s requested from %s",
+                                       id, localAddress, sender));
+                continue;
+            }
             state.writeTo(msg);
-            send(UPDATE, msg, sender);
+            send(UPDATE, msg, sender, p2pSocket);
         }
     }
 
@@ -478,23 +544,25 @@ public class Engine {
         };
     }
 
-    private void processInbound(InetSocketAddress sender, ByteBuffer buffer) {
+    private void processInbound(InetSocketAddress sender, ByteBuffer buffer)
+                                                                            throws UnknownHostException {
         byte msgType = buffer.get();
         switch (msgType) {
             case DIGESTS: {
                 handleDigests(sender, buffer);
                 break;
             }
-            case REMOVE: {
-                handleRemove(sender, buffer);
-                break;
-            }
             case UPDATE: {
                 handleUpdate(sender, buffer);
                 break;
             }
+            case REMOVE: {
+                handleRemove(sender, buffer);
+                break;
+            }
             case STATE_REQUEST: {
                 handleStateRequest(sender, buffer);
+                break;
             }
             default: {
                 if (log.isInfoEnabled()) {
@@ -509,24 +577,22 @@ public class Engine {
         ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
         buffer.order(ByteOrder.BIG_ENDIAN);
         for (int i = 0; i < updates.size();) {
+            buffer.position(MESSAGE_HEADER_BYTE_SIZE);
             byte count = (byte) min(maxUuids, updates.size() - i);
-            buffer.position(MAGIC_BYTE_SIZE);
             buffer.put(count);
             for (UUID id : updates.subList(i, i + count)) {
                 buffer.putLong(id.getMostSignificantBits());
                 buffer.putLong(id.getLeastSignificantBits());
             }
-            send(STATE_REQUEST, buffer, sender);
+            send(STATE_REQUEST, buffer, sender, p2pSocket);
             i += count;
             buffer.clear();
         }
         bufferPool.free(buffer);
     }
 
-    private void send(byte msgType, ByteBuffer buffer, InetSocketAddress target) {
-        if (target.getPort() == 0) {
-
-        }
+    private void send(byte msgType, ByteBuffer buffer,
+                      InetSocketAddress target, DatagramSocket socket) {
         if (socket.isClosed()) {
             log.trace(String.format("Sending on a closed socket"));
             return;
@@ -578,40 +644,38 @@ public class Engine {
         buffer.order(ByteOrder.BIG_ENDIAN);
         for (int i = 0; i < digests.size();) {
             byte count = (byte) min(maxDigests, digests.size() - i);
-            buffer.position(MAGIC_BYTE_SIZE);
+            buffer.position(MESSAGE_HEADER_BYTE_SIZE);
+            write(localAddress, buffer);
             buffer.put(count);
-            int position;
             for (Digest digest : digests.subList(i, i + count)) {
                 digest.writeTo(buffer);
-                position = buffer.position();
-                Integer.toString(position);
             }
-            send(DIGESTS, buffer, groupAddess);
+            send(DIGESTS, buffer, groupAddess, multicastSocket);
             i += count;
             buffer.clear();
         }
         bufferPool.free(buffer);
     }
 
-    private void service() throws IOException {
+    private void service(final DatagramSocket socket, final String tag)
+                                                                       throws IOException {
         final ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
         buffer.order(ByteOrder.BIG_ENDIAN);
         final DatagramPacket packet = new DatagramPacket(buffer.array(),
                                                          buffer.array().length);
         if (log.isTraceEnabled()) {
-            log.trace(String.format("listening for packet on %s",
+            log.trace(String.format("listening for %s packet on %s", tag,
                                     socket.getLocalSocketAddress()));
         }
         socket.receive(packet);
         buffer.limit(packet.getLength());
         if (log.isTraceEnabled()) {
-            log.trace(String.format("Received packet %s",
+            log.trace(String.format("Received %s packet %s",
+                                    tag,
                                     prettyPrint(packet.getSocketAddress(),
                                                 getLocalAddress(),
                                                 buffer.array(),
                                                 packet.getLength())));
-        } else if (log.isTraceEnabled()) {
-            log.trace("Received packet from: " + packet.getSocketAddress());
         }
         executor.execute(new Runnable() {
             @Override
@@ -622,15 +686,17 @@ public class Engine {
                         if (!checkMac(buffer.array(), 0, packet.getLength()
                                                          - hmac.getMacLength())) {
                             if (log.isWarnEnabled()) {
-                                log.warn(format("Error processing inbound message on: %s, HMAC does not check",
-                                                getLocalAddress()));
+                                log.warn(format("Error processing inbound %s message on: %s, HMAC does not check",
+                                                tag,
+                                                socket.getLocalSocketAddress()));
                             }
                             return;
                         }
                     } catch (SecurityException e) {
                         if (log.isWarnEnabled()) {
-                            log.warn(format("Error processing inbound message on: %s, HMAC does not check",
-                                            getLocalAddress()), e);
+                            log.warn(format("Error processing %s inbound message on: %s, HMAC does not check",
+                                            tag, socket.getLocalSocketAddress()),
+                                     e);
                         }
                         return;
                     }
@@ -640,13 +706,15 @@ public class Engine {
                                        buffer);
                     } catch (Throwable e) {
                         if (log.isWarnEnabled()) {
-                            log.warn(format("Error processing inbound message on: %s",
-                                            getLocalAddress()), e);
+                            log.warn(format("Error processing %s inbound message on: %s",
+                                            tag, socket.getLocalSocketAddress()),
+                                     e);
                         }
                     }
                 } else {
                     if (log.isWarnEnabled()) {
-                        log.warn(format("Msg with invalid MAGIC header [%s] discarded %s",
+                        log.warn(format("%s msg with invalid MAGIC header [%s] discarded %s",
+                                        tag,
                                         magic,
                                         prettyPrint(packet.getSocketAddress(),
                                                     getLocalAddress(),
@@ -659,17 +727,17 @@ public class Engine {
         });
     }
 
-    private Runnable serviceTask() {
+    private Runnable serviceTask(final DatagramSocket socket, final String tag) {
         return new Runnable() {
             @Override
             public void run() {
                 if (log.isInfoEnabled()) {
-                    log.info(String.format("UDP muticast communications started on %s",
-                                           getLocalAddress()));
+                    log.info(String.format("UDP %s communications started on %s",
+                                           tag, getLocalAddress()));
                 }
                 while (running.get()) {
                     try {
-                        service();
+                        service(socket, tag);
                     } catch (SocketException e) {
                         if ("Socket closed".equals(e.getMessage())) {
                             if (log.isTraceEnabled()) {

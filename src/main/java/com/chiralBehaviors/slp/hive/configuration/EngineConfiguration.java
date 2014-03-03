@@ -17,8 +17,8 @@
 package com.chiralBehaviors.slp.hive.configuration;
 
 import java.io.IOException;
-import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
+import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.security.InvalidKeyException;
@@ -40,15 +40,6 @@ import com.hellblazer.utils.fd.impl.AdaptiveFailureDetectorFactory;
  * 
  */
 public class EngineConfiguration {
-    public static NetworkInterface getDefaultNetworkInterface()
-                                                               throws SocketException {
-        NetworkInterface iface = NetworkInterface.getByIndex(1);
-        if (iface == null) {
-            throw new IllegalArgumentException(
-                                               "Cannot find the default network interface ");
-        }
-        return iface;
-    }
 
     public FailureDetectorFactory fdFactory;
     public int                    heartbeatPeriod         = 3;
@@ -64,12 +55,12 @@ public class EngineConfiguration {
     public int                    ttl                     = 1;
 
     public Engine construct() throws IOException {
-        DatagramSocket socket = Engine.connect(group, ttl,
-                                               getNetworkInterface());
+        NetworkInterface networkInterface = getNetworkInterface();
+        MulticastSocket socket = Engine.connect(group, ttl, networkInterface);
         return new Engine(getFdFactory(), Generators.timeBasedGenerator(),
                           heartbeatPeriod, heartbeatUnit, socket, group,
                           receiveBufferMultiplier, sendBufferMultiplier,
-                          getMac());
+                          getMac(), networkInterface);
     }
 
     public FailureDetectorFactory getFdFactory() {

@@ -14,6 +14,25 @@
  */
 package com.chiralBehaviors.slp.hive;
 
+import static org.junit.Assert.assertEquals;
 
-public class EngineTest  {
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
+
+import org.junit.Test;
+
+public class EngineTest {
+    @Test
+    public void testInetSocketAddressSerialize() throws UnknownHostException {
+        InetSocketAddress written = new InetSocketAddress("localhost", 666);
+        ByteBuffer buffer = ByteBuffer.allocate(256);
+        Engine.write(written, buffer);
+        int pos = buffer.position();
+        buffer.flip();
+        System.out.println(Engine.prettyPrint(new InetSocketAddress(0),
+                                              written, buffer.array(), pos));
+        InetSocketAddress read = Engine.readSocketAddress(buffer);
+        assertEquals(written, read);
+    }
 }

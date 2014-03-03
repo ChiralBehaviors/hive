@@ -33,8 +33,15 @@ public class ReplicatedState {
     private final long   time;
 
     public ReplicatedState(ByteBuffer buffer) {
-        this(new UUID(buffer.getLong(), buffer.getLong()), buffer.getLong(),
-             getState(buffer));
+        this(getUUID(buffer), buffer.getLong(), getState(buffer));
+    }
+
+    /**
+     * @param buffer
+     * @return
+     */
+    private static UUID getUUID(ByteBuffer buffer) {
+        return new UUID(buffer.getLong(), buffer.getLong());
     }
 
     public ReplicatedState(UUID id, long time, byte[] state) {

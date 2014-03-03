@@ -26,6 +26,7 @@ public interface Messages {
     int  LONG_BYTE_SIZE           = INT_BYTE_SIZE + INT_BYTE_SIZE;
     int  MAGIC                    = 0xCAFEBABE;
     int  MAGIC_BYTE_SIZE          = INT_BYTE_SIZE;
+    int  IPV6_BYTES               = 6;
     /**
      * MAX_SEG_SIZE is a default maximum packet size. This may be small, but any
      * network will be capable of handling this size so the packet transfer
@@ -35,6 +36,8 @@ public interface Messages {
     int  MESSAGE_HEADER_BYTE_SIZE = MAGIC_BYTE_SIZE + BYTE_SIZE;
     int  UUID_BYTE_SIZE           = LONG_BYTE_SIZE + LONG_BYTE_SIZE;
     int  DIGEST_BYTE_SIZE         = UUID_BYTE_SIZE + LONG_BYTE_SIZE;
+    int  DIGEST_HEADER_SIZE       = MESSAGE_HEADER_BYTE_SIZE + INT_BYTE_SIZE
+                                    + BYTE_SIZE + IPV6_BYTES;
 
     /** Messages **/
     byte DIGESTS                  = 0;

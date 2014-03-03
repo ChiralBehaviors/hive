@@ -61,7 +61,10 @@ public class Endpoint {
         try {
             List<UUID> updates = new ArrayList<>(states.size() + 1);
             for (Digest digest : digests) {
-                if (fd != null && digest.equals(Engine.HEARTBEAT)) {
+                if (fd != null && digest.getId().equals(Engine.HEARTBEAT)) {
+                    if (logger.isTraceEnabled()) {
+                        logger.trace(String.format("received heartbeat"));
+                    }
                     fd.record(digest.getTime(), 0);
                 } else {
                     if (!states.containsKey(digest.getId())
@@ -106,7 +109,10 @@ public class Endpoint {
         myLock.lock();
         try {
             added = states.put(state.getId(), state.getTime()) == null;
-            if (fd != null && state.equals(Engine.HEARTBEAT)) {
+            if (fd != null && state.getId().equals(Engine.HEARTBEAT)) {
+                if (logger.isTraceEnabled()) {
+                    logger.trace(String.format("received heartbeat"));
+                }
                 fd.record(state.getTime(), 0);
             }
             return added;

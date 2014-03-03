@@ -107,7 +107,7 @@ public class EndToEndTest {
 
     @Test
     public void testEnd2End() throws Exception {
-        int membership = 2;
+        int membership = 16;
         stateIds = new UUID[membership];
 
         Receiver[] receivers = new Receiver[membership];
@@ -131,7 +131,7 @@ public class EndToEndTest {
             for (int i = 0; i < membership; i++) {
                 assertTrue(String.format("initial iteration did not receive all notifications for %s",
                                          members.get(i)),
-                           receivers[i].await(30, TimeUnit.SECONDS));
+                           receivers[i].await(30, TimeUnit.MINUTES));
             }
             System.out.println();
             System.out.println("Initial iteration completed");
