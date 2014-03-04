@@ -28,20 +28,21 @@ public class ReplicatedState {
         return state;
     }
 
-    private final UUID   id;
-    private final byte[] state;
-    private final long   time;
-
-    public ReplicatedState(ByteBuffer buffer) {
-        this(getUUID(buffer), buffer.getLong(), getState(buffer));
-    }
-
     /**
      * @param buffer
      * @return
      */
     private static UUID getUUID(ByteBuffer buffer) {
         return new UUID(buffer.getLong(), buffer.getLong());
+    }
+
+    private final UUID   id;
+    private final byte[] state;
+
+    private final long   time;
+
+    public ReplicatedState(ByteBuffer buffer) {
+        this(getUUID(buffer), buffer.getLong(), getState(buffer));
     }
 
     public ReplicatedState(UUID id, long time, byte[] state) {
@@ -73,6 +74,10 @@ public class ReplicatedState {
             return false;
         }
         return true;
+    }
+
+    public Digest getDigest() {
+        return new Digest(this);
     }
 
     /**
@@ -128,9 +133,5 @@ public class ReplicatedState {
         buffer.putLong(id.getLeastSignificantBits());
         buffer.putLong(time);
         buffer.put(state);
-    }
-
-    public Digest getDigest() {
-        return new Digest(this);
     }
 }

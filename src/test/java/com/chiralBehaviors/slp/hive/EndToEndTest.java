@@ -29,7 +29,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Test;
 
+import com.chiralBehaviors.slp.hive.configuration.BroadcastConfiguration;
 import com.chiralBehaviors.slp.hive.configuration.EngineConfiguration;
+import com.chiralBehaviors.slp.hive.configuration.MulticastConfiguration;
 
 /**
  * Basic end to end testing
@@ -102,11 +104,31 @@ public class EndToEndTest {
 
     private static final AtomicInteger count        = new AtomicInteger();
     private static final AtomicBoolean deregistered = new AtomicBoolean(false);
-    private UUID[]                     stateIds;
     private List<Engine>               members;
+    private UUID[]                     stateIds;
 
     @Test
-    public void testEnd2End() throws Exception {
+    public void testBroadcast() throws Exception {
+        test(true);
+    }
+
+    @Test
+    public void testMulticast() throws Exception {
+        test(false);
+    }
+
+    private Engine createDefaultCommunications(EngineListener receiver,
+                                               boolean broadcast)
+                                                                 throws IOException {
+        EngineConfiguration config = broadcast ? new BroadcastConfiguration()
+                                              : new MulticastConfiguration();
+        Engine engine = config.construct();
+        engine.setListener(receiver);
+        engine.start();
+        return engine;
+    }
+
+    private void test(boolean broadcast) throws Exception {
         int membership = 16;
         stateIds = new UUID[membership];
 
@@ -116,7 +138,7 @@ public class EndToEndTest {
         }
         members = new ArrayList<Engine>();
         for (int i = 0; i < membership; i++) {
-            members.add(createDefaultCommunications(receivers[i]));
+            members.add(createDefaultCommunications(receivers[i], broadcast));
         }
         try {
             int id = 0;
@@ -149,18 +171,9 @@ public class EndToEndTest {
         assertFalse("state was deregistered", deregistered.get());
     }
 
-    protected Engine createDefaultCommunications(EngineListener receiver)
-                                                                         throws IOException {
-        EngineConfiguration config = new EngineConfiguration();
-        Engine engine = config.construct();
-        engine.setListener(receiver);
-        engine.start();
-        return engine;
-    }
-
-    protected void updateAndAwait(int iteration, int membership,
-                                  Receiver[] receivers, List<Engine> members)
-                                                                             throws InterruptedException {
+    private void updateAndAwait(int iteration, int membership,
+                                Receiver[] receivers, List<Engine> members)
+                                                                           throws InterruptedException {
         int id = 0;
         for (Receiver receiver : receivers) {
             receiver.setLatches(id++);

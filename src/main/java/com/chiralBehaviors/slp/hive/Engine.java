@@ -100,7 +100,8 @@ public class Engine {
         try {
             for (InterfaceAddress address : netIf.getInterfaceAddresses()) {
                 InetAddress ip = address.getAddress();
-                if (mcastaddr.getAddress().getClass().equals(ip.getClass())) {
+                if (ip != null
+                    && mcastaddr.getAddress().getClass().equals(ip.getClass())) {
                     s = new MulticastSocket(
                                             new InetSocketAddress(
                                                                   mcastaddr.getPort()));
@@ -190,7 +191,7 @@ public class Engine {
     private final int                                        maxDigests;
     private final int                                        maxUuids;
     private final ConcurrentMap<InetSocketAddress, Endpoint> members    = new ConcurrentHashMap<>();
-    private final MulticastSocket                            multicastSocket;
+    private final DatagramSocket                             multicastSocket;
 
     private final DatagramSocket                             p2pSocket;
 
@@ -198,7 +199,7 @@ public class Engine {
 
     public Engine(FailureDetectorFactory fdFactory, NoArgGenerator idGenerator,
                   int heartbeatPeriod, TimeUnit heartbeatUnit,
-                  MulticastSocket socket, InetSocketAddress groupAddress,
+                  DatagramSocket socket, InetSocketAddress groupAddress,
                   int receiveBufferMultiplier, int sendBufferMultiplier,
                   Mac mac, NetworkInterface iface) throws SocketException {
         executor = Executors.newSingleThreadScheduledExecutor();

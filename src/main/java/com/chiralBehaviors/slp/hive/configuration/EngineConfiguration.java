@@ -17,8 +17,6 @@
 package com.chiralBehaviors.slp.hive.configuration;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.security.InvalidKeyException;
@@ -30,7 +28,6 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 import com.chiralBehaviors.slp.hive.Engine;
-import com.fasterxml.uuid.Generators;
 import com.hellblazer.utils.Base64Coder;
 import com.hellblazer.utils.fd.FailureDetectorFactory;
 import com.hellblazer.utils.fd.impl.AdaptiveFailureDetectorFactory;
@@ -39,29 +36,18 @@ import com.hellblazer.utils.fd.impl.AdaptiveFailureDetectorFactory;
  * @author hhildebrand
  * 
  */
-public class EngineConfiguration {
+abstract public class EngineConfiguration {
 
     public FailureDetectorFactory fdFactory;
     public int                    heartbeatPeriod         = 3;
     public TimeUnit               heartbeatUnit           = TimeUnit.SECONDS;
     public String                 hmac                    = "HmacMD5";
     public String                 hmacKey                 = "I0WDrSNGg60jRYOtI0WDrQ==";
-    public InetSocketAddress      group                   = new InetSocketAddress(
-                                                                                  "233.1.2.30",
-                                                                                  1966);
-    public String                 multicastInterface;
+    public String                 networkInterface;
     public int                    receiveBufferMultiplier = Engine.DEFAULT_RECEIVE_BUFFER_MULTIPLIER;
     public int                    sendBufferMultiplier    = Engine.DEFAULT_SEND_BUFFER_MULTIPLIER;
-    public int                    ttl                     = 1;
 
-    public Engine construct() throws IOException {
-        NetworkInterface networkInterface = getNetworkInterface();
-        MulticastSocket socket = Engine.connect(group, ttl, networkInterface);
-        return new Engine(getFdFactory(), Generators.timeBasedGenerator(),
-                          heartbeatPeriod, heartbeatUnit, socket, group,
-                          receiveBufferMultiplier, sendBufferMultiplier,
-                          getMac(), networkInterface);
-    }
+    abstract public Engine construct() throws IOException;
 
     public FailureDetectorFactory getFdFactory() {
         if (fdFactory == null) {
@@ -98,7 +84,7 @@ public class EngineConfiguration {
     }
 
     public NetworkInterface getNetworkInterface() throws SocketException {
-        if (multicastInterface == null) {
+        if (networkInterface == null) {
             for (Enumeration<NetworkInterface> intfs = NetworkInterface.getNetworkInterfaces(); intfs.hasMoreElements();) {
                 NetworkInterface intf = intfs.nextElement();
                 if (intf.supportsMulticast()) {
@@ -108,11 +94,11 @@ public class EngineConfiguration {
             throw new IllegalStateException(
                                             "No interface supporting multicast was discovered");
         }
-        NetworkInterface iface = NetworkInterface.getByName(multicastInterface);
+        NetworkInterface iface = NetworkInterface.getByName(networkInterface);
         if (iface == null) {
             throw new IllegalArgumentException(
                                                String.format("Cannot find network interface: %s ",
-                                                             multicastInterface));
+                                                             networkInterface));
         }
         return iface;
     }
