@@ -16,14 +16,14 @@
 
 package com.chiralBehaviors.slp.hive;
 
-import static com.chiralBehaviors.slp.hive.Messages.BYTE_SIZE;
+import static com.chiralBehaviors.slp.hive.Messages.*;
 import static com.chiralBehaviors.slp.hive.Messages.DIGESTS;
 import static com.chiralBehaviors.slp.hive.Messages.DIGEST_BYTE_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MAGIC;
 import static com.chiralBehaviors.slp.hive.Messages.MAGIC_BYTE_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MAX_SEG_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MESSAGE_HEADER_BYTE_SIZE;
-import static com.chiralBehaviors.slp.hive.Messages.REMOVE;
+import static com.chiralBehaviors.slp.hive.Messages.DEREGISTER;
 import static com.chiralBehaviors.slp.hive.Messages.STATE_REQUEST;
 import static com.chiralBehaviors.slp.hive.Messages.UPDATE;
 import static com.chiralBehaviors.slp.hive.Messages.UUID_BYTE_SIZE;
@@ -253,6 +253,16 @@ public class Engine {
             log.debug(String.format("Member: %s abandoning replicated state",
                                     getLocalAddress()));
         }
+        ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
+        buffer.order(ByteOrder.BIG_ENDIAN);
+        buffer.position(MESSAGE_HEADER_BYTE_SIZE);
+        try {
+            buffer.putLong(id.getMostSignificantBits());
+            buffer.putLong(id.getLeastSignificantBits());
+            send(DEREGISTER, buffer, groupAddess);
+        } finally {
+            bufferPool.free(buffer);
+        }
     }
 
     public InetSocketAddress getLocalAddress() {
@@ -281,6 +291,15 @@ public class Engine {
         if (log.isDebugEnabled()) {
             log.debug(String.format("Member: %s registering replicated state",
                                     getLocalAddress()));
+        }
+        ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
+        buffer.order(ByteOrder.BIG_ENDIAN);
+        buffer.position(MESSAGE_HEADER_BYTE_SIZE);
+        try {
+            state.writeTo(buffer);
+            send(UPDATE, buffer, groupAddess);
+        } finally {
+            bufferPool.free(buffer);
         }
         return id;
     }
@@ -457,7 +476,7 @@ public class Engine {
         }
     }
 
-    private void handleRemove(InetSocketAddress sender, ByteBuffer buffer) {
+    private void handleDeregister(InetSocketAddress sender, ByteBuffer buffer) {
         UUID stateId = new UUID(buffer.getLong(), buffer.getLong());
         Endpoint endpoint = members.get(sender);
         if (endpoint == null) {
@@ -539,8 +558,8 @@ public class Engine {
                 handleUpdate(sender, buffer);
                 break;
             }
-            case REMOVE: {
-                handleRemove(sender, buffer);
+            case DEREGISTER: {
+                handleDeregister(sender, buffer);
                 break;
             }
             case STATE_REQUEST: {
