@@ -98,7 +98,7 @@ public class FunctionalTest {
     }
 
     private void functionalTest(boolean broadcast) throws Exception {
-        int members = 2;
+        int members = 16;
         final CountDownLatch registered = new CountDownLatch(members);
         final CountDownLatch modified = new CountDownLatch(members);
         final CountDownLatch unregistered = new CountDownLatch(members);
