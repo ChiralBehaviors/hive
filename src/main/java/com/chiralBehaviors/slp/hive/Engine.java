@@ -319,7 +319,7 @@ public class Engine {
         }
     }
 
-    public void terminate() {
+    public void stop() {
         if (running.compareAndSet(true, false)) {
             if (log.isInfoEnabled()) {
                 log.info(String.format("Terminating UDP Communications on %s",
@@ -477,6 +477,12 @@ public class Engine {
     }
 
     private void handleDeregister(InetSocketAddress sender, ByteBuffer buffer) {
+        if (sender.equals(localAddress)) {
+            if (log.isTraceEnabled()) {
+                log.trace(format("Ignoring deregister from self %s", sender));
+            }
+            return;
+        }
         UUID stateId = new UUID(buffer.getLong(), buffer.getLong());
         Endpoint endpoint = members.get(sender);
         if (endpoint == null) {
@@ -510,6 +516,12 @@ public class Engine {
     }
 
     private void handleUpdate(InetSocketAddress sender, ByteBuffer buffer) {
+        if (sender.equals(localAddress)) {
+            if (log.isTraceEnabled()) {
+                log.trace(format("Ignoring update from self %s", sender));
+            }
+            return;
+        }
         final ReplicatedState state;
         try {
             state = new ReplicatedState(buffer);
@@ -740,7 +752,7 @@ public class Engine {
                         if ("Socket closed".equals(e.getMessage())) {
                             if (log.isTraceEnabled()) {
                                 log.trace("Socket closed, shutting down");
-                                terminate();
+                                stop();
                                 return;
                             }
                         }

@@ -153,7 +153,7 @@ public class EndToEndTest {
             for (int i = 0; i < membership; i++) {
                 assertTrue(String.format("initial iteration did not receive all notifications for %s",
                                          members.get(i)),
-                           receivers[i].await(30, TimeUnit.MINUTES));
+                           receivers[i].await(30, TimeUnit.SECONDS));
             }
             System.out.println();
             System.out.println("Initial iteration completed");
@@ -165,7 +165,7 @@ public class EndToEndTest {
         } finally {
             System.out.println();
             for (Engine member : members) {
-                member.terminate();
+                member.stop();
             }
         }
         assertFalse("state was deregistered", deregistered.get());

@@ -524,11 +524,13 @@ public class HiveScope implements ServiceScope {
 
     @Override
     public HiveScope start() {
+        engine.start();
         return this;
     }
 
     @Override
     public ServiceScope stop() {
+        engine.stop();
         return this;
     }
 
