@@ -38,6 +38,7 @@ public class EngineModule extends FdFactoryModule {
     public void setupModule(SetupContext context) {
         addDeserializer(InetSocketAddress.class,
                         new InetSocketAddressDeserializer());
+        setMixInAnnotation(EngineConfiguration.class, EngineMixin.class);
         super.setupModule(context);
     }
 }
