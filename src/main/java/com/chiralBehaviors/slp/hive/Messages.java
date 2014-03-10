@@ -40,6 +40,6 @@ public interface Messages {
     /** Messages **/
     byte DIGESTS                  = 0;
     byte UPDATE                   = 1;
-    byte DEREGISTER                   = 2;
+    byte DEREGISTER               = 2;
     byte STATE_REQUEST            = 3;
 }

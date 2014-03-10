@@ -124,8 +124,8 @@ public class ReplicatedState {
 
     @Override
     public String toString() {
-        return String.format("ReplicatedState [id=%s,size=%s]", id,
-                             state.length);
+        return String.format("ReplicatedState [id=%s,size=%s,time=%s]", id,
+                             state.length, time);
     }
 
     public void writeTo(ByteBuffer buffer) {

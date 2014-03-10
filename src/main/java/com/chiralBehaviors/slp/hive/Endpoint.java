@@ -102,30 +102,28 @@ public class Endpoint {
         return false;
     }
 
-    public boolean update(Digest state) {
+    public void update(ReplicatedState state, EngineListener listener) {
         assert state != null : "updated state cannot be null";
         final ReentrantLock myLock = synch;
-        boolean added;
         myLock.lock();
         try {
-            added = states.put(state.getId(), state.getTime()) == null;
             if (fd != null && state.getId().equals(Engine.HEARTBEAT)) {
                 if (logger.isTraceEnabled()) {
                     logger.trace(String.format("received heartbeat"));
                 }
                 fd.record(state.getTime(), 0);
+            } else {
+                Long time = states.get(state.getId());
+                if (time == null) {
+                    states.put(state.getId(), state.getTime());
+                    listener.register(state.getId(), state.getState());
+                } else {
+                    if (time <= state.getTime()) {
+                        states.put(state.getId(), state.getTime());
+                        listener.update(state.getId(), state.getState());
+                    }
+                }
             }
-            return added;
-        } finally {
-            myLock.unlock();
-        }
-    }
-
-    public void update(ReplicatedState state) {
-        final ReentrantLock myLock = synch;
-        myLock.lock();
-        try {
-            states.put(state.getId(), state.getTime());
         } finally {
             myLock.unlock();
         }

@@ -16,14 +16,14 @@
 
 package com.chiralBehaviors.slp.hive;
 
-import static com.chiralBehaviors.slp.hive.Messages.*;
+import static com.chiralBehaviors.slp.hive.Messages.BYTE_SIZE;
+import static com.chiralBehaviors.slp.hive.Messages.DEREGISTER;
 import static com.chiralBehaviors.slp.hive.Messages.DIGESTS;
 import static com.chiralBehaviors.slp.hive.Messages.DIGEST_BYTE_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MAGIC;
 import static com.chiralBehaviors.slp.hive.Messages.MAGIC_BYTE_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MAX_SEG_SIZE;
 import static com.chiralBehaviors.slp.hive.Messages.MESSAGE_HEADER_BYTE_SIZE;
-import static com.chiralBehaviors.slp.hive.Messages.DEREGISTER;
 import static com.chiralBehaviors.slp.hive.Messages.STATE_REQUEST;
 import static com.chiralBehaviors.slp.hive.Messages.UPDATE;
 import static com.chiralBehaviors.slp.hive.Messages.UUID_BYTE_SIZE;
@@ -127,6 +127,27 @@ public class Engine {
         return s;
     }
 
+    public static DatagramSocket connect(NetworkInterface iface,
+                                         InetSocketAddress groupAddress)
+                                                                        throws SocketException {
+
+        InetAddress bind = null;
+        for (Enumeration<InetAddress> addresses = iface.getInetAddresses(); addresses.hasMoreElements();) {
+            InetAddress address = addresses.nextElement();
+            if (address.getClass().equals(groupAddress.getAddress().getClass())) {
+                bind = address;
+                break;
+            }
+        }
+        if (bind == null) {
+            throw new IllegalArgumentException(
+                                               String.format("No matching address for %s found on %s",
+                                                             groupAddress,
+                                                             iface));
+        }
+        return new DatagramSocket(new InetSocketAddress(bind, 0));
+    }
+
     /**
      * @return a default mac, with a fixed key. Used for validation only, no
      *         authentication
@@ -179,7 +200,7 @@ public class Engine {
                                                                                              100);
     private final ScheduledExecutorService                   executor;
     private final FailureDetectorFactory                     fdFactory;
-    private final InetSocketAddress                          groupAddess;
+    private final InetSocketAddress                          groupAddress;
     private final int                                        heartbeatPeriod;
     private ScheduledFuture<?>                               heartbeatTask;
     private final TimeUnit                                   heartbeatUnit;
@@ -199,21 +220,38 @@ public class Engine {
 
     public Engine(FailureDetectorFactory fdFactory, NoArgGenerator idGenerator,
                   int heartbeatPeriod, TimeUnit heartbeatUnit,
-                  DatagramSocket socket, InetSocketAddress groupAddress,
-                  int receiveBufferMultiplier, int sendBufferMultiplier,
-                  Mac mac, NetworkInterface iface) throws SocketException {
-        executor = Executors.newSingleThreadScheduledExecutor();
+                  DatagramSocket multicastSocket,
+                  InetSocketAddress groupAddress, int receiveBufferMultiplier,
+                  int sendBufferMultiplier, Mac mac, NetworkInterface iface)
+                                                                            throws SocketException {
+        this(Executors.newScheduledThreadPool(2), fdFactory, idGenerator,
+             heartbeatPeriod, heartbeatUnit, multicastSocket, groupAddress,
+             receiveBufferMultiplier, sendBufferMultiplier, mac,
+             connect(iface, groupAddress));
+    }
+
+    public Engine(ScheduledExecutorService executor,
+                  FailureDetectorFactory fdFactory, NoArgGenerator idGenerator,
+                  int heartbeatPeriod, TimeUnit heartbeatUnit,
+                  DatagramSocket multicastSocket,
+                  InetSocketAddress groupAddress, int receiveBufferMultiplier,
+                  int sendBufferMultiplier, Mac mac, DatagramSocket p2pSocket)
+                                                                              throws SocketException {
+        this.executor = executor;
         this.fdFactory = fdFactory;
         this.idGenerator = idGenerator;
         this.heartbeatPeriod = heartbeatPeriod;
         this.heartbeatUnit = heartbeatUnit;
-        multicastSocket = socket;
-        groupAddess = groupAddress;
+        this.multicastSocket = multicastSocket;
+        this.groupAddress = groupAddress;
         try {
-            socket.setReceiveBufferSize(MAX_SEG_SIZE * receiveBufferMultiplier);
-            socket.setSendBufferSize(MAX_SEG_SIZE * sendBufferMultiplier);
+            multicastSocket.setReceiveBufferSize(MAX_SEG_SIZE
+                                                 * receiveBufferMultiplier);
+            multicastSocket.setSendBufferSize(MAX_SEG_SIZE
+                                              * sendBufferMultiplier);
         } catch (SocketException e) {
-            log.error(format("Unable to configure endpoint: %s", socket));
+            log.error(format("Unable to configure endpoint: %s",
+                             multicastSocket));
             throw e;
         }
         hmac = mac;
@@ -223,21 +261,7 @@ public class Engine {
                      / DIGEST_BYTE_SIZE;
         maxUuids = (payloadByteSize - BYTE_SIZE) // 1 byte for #uuids
                    / UUID_BYTE_SIZE;
-        InetAddress bind = null;
-        for (Enumeration<InetAddress> addresses = iface.getInetAddresses(); addresses.hasMoreElements();) {
-            InetAddress address = addresses.nextElement();
-            if (address.getClass().equals(groupAddress.getAddress().getClass())) {
-                bind = address;
-                break;
-            }
-        }
-        if (bind == null) {
-            throw new IllegalArgumentException(
-                                               String.format("No matching address for %s found on %s",
-                                                             groupAddress,
-                                                             iface));
-        }
-        p2pSocket = new DatagramSocket(new InetSocketAddress(bind, 0));
+        this.p2pSocket = p2pSocket;
         localAddress = (InetSocketAddress) p2pSocket.getLocalSocketAddress();
     }
 
@@ -259,7 +283,7 @@ public class Engine {
         try {
             buffer.putLong(id.getMostSignificantBits());
             buffer.putLong(id.getLeastSignificantBits());
-            send(DEREGISTER, buffer, groupAddess);
+            send(DEREGISTER, buffer, groupAddress);
         } finally {
             bufferPool.free(buffer);
         }
@@ -289,15 +313,15 @@ public class Engine {
                                                     replicatedState);
         localState.put(id, state);
         if (log.isDebugEnabled()) {
-            log.debug(String.format("Member: %s registering replicated state",
-                                    getLocalAddress()));
+            log.debug(String.format("Member: %s registering replicated state: %s",
+                                    getLocalAddress(), id));
         }
         ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
         buffer.order(ByteOrder.BIG_ENDIAN);
         buffer.position(MESSAGE_HEADER_BYTE_SIZE);
         try {
             state.writeTo(buffer);
-            send(UPDATE, buffer, groupAddess);
+            send(UPDATE, buffer, groupAddress);
         } finally {
             bufferPool.free(buffer);
         }
@@ -310,12 +334,11 @@ public class Engine {
 
     public void start() {
         if (running.compareAndSet(false, true)) {
-            Executors.newSingleThreadExecutor().execute(serviceTask(multicastSocket,
-                                                                    "multicast"));
-            Executors.newSingleThreadExecutor().execute(serviceTask(p2pSocket,
-                                                                    "p2p"));
-            heartbeatTask = executor.schedule(heartbeatTask(), heartbeatPeriod,
-                                              heartbeatUnit);
+            Executors.newSingleThreadExecutor().execute(multicastServiceTask());
+            Executors.newSingleThreadExecutor().execute(p2pServiceTask());
+            heartbeatTask = executor.scheduleAtFixedRate(heartbeatTask(), 0,
+                                                         heartbeatPeriod,
+                                                         heartbeatUnit);
         }
     }
 
@@ -366,7 +389,7 @@ public class Engine {
         buffer.position(MESSAGE_HEADER_BYTE_SIZE);
         try {
             state.writeTo(buffer);
-            send(UPDATE, buffer, groupAddess);
+            send(UPDATE, buffer, groupAddress);
         } finally {
             bufferPool.free(buffer);
         }
@@ -394,29 +417,6 @@ public class Engine {
         return true;
     }
 
-    private Digest[] extractDigests(SocketAddress sender, ByteBuffer msg) {
-        int count = msg.get();
-        final Digest[] digests = new Digest[count];
-        for (int i = 0; i < count; i++) {
-            Digest digest;
-            try {
-                digest = new Digest(msg);
-            } catch (Throwable e) {
-                if (log.isWarnEnabled()) {
-                    log.warn(String.format("Cannot deserialize digest. Ignoring the digest: %s\n%s",
-                                           i,
-                                           prettyPrint(sender,
-                                                       getLocalAddress(),
-                                                       msg.array(), msg.limit())),
-                             e);
-                }
-                continue;
-            }
-            digests[i] = digest;
-        }
-        return digests;
-    }
-
     private UUID[] extractIds(SocketAddress sender, ByteBuffer msg) {
         int count = msg.get();
         final UUID[] uuids = new UUID[count];
@@ -440,171 +440,6 @@ public class Engine {
         return uuids;
     }
 
-    private void handleDigests(InetSocketAddress sender, ByteBuffer buffer)
-                                                                           throws UnknownHostException {
-        if (sender.equals(localAddress)) {
-            if (log.isTraceEnabled()) {
-                log.trace(String.format("ignoring digests received from self on %s",
-                                        localAddress));
-            }
-            return;
-        }
-        Digest[] digests = extractDigests(sender, buffer);
-        if (log.isTraceEnabled()) {
-            log.trace(String.format("Digests from %s are %s", sender,
-                                    Arrays.toString(digests)));
-        }
-        Endpoint endpoint = members.get(sender);
-        if (endpoint == null) {
-            Endpoint newEndpoint = new Endpoint(fdFactory.create());
-            endpoint = members.putIfAbsent(sender, newEndpoint);
-            if (endpoint == null) {
-                if (log.isDebugEnabled()) {
-                    log.debug(String.format("Discovered %s on %s", sender,
-                                            localAddress));
-                }
-                endpoint = newEndpoint;
-            }
-        }
-        List<UUID> updates = endpoint.getUpdates(digests);
-        if (!updates.isEmpty()) {
-            if (log.isTraceEnabled()) {
-                log.trace(String.format("Sending updates %s to %s from %s",
-                                        updates, sender, localAddress));
-            }
-            requestState(sender, updates);
-        }
-    }
-
-    private void handleDeregister(InetSocketAddress sender, ByteBuffer buffer) {
-        if (sender.equals(localAddress)) {
-            if (log.isTraceEnabled()) {
-                log.trace(format("Ignoring deregister from self %s", sender));
-            }
-            return;
-        }
-        UUID stateId = new UUID(buffer.getLong(), buffer.getLong());
-        Endpoint endpoint = members.get(sender);
-        if (endpoint == null) {
-            log.trace(String.format("Remove %s from unknown member %s",
-                                    stateId, sender));
-            return;
-        }
-        endpoint.remove(stateId);
-        listener.deregister(stateId);
-    }
-
-    private void handleStateRequest(InetSocketAddress sender, ByteBuffer buffer) {
-        UUID[] ids = extractIds(sender, buffer);
-        if (log.isTraceEnabled()) {
-            log.trace(String.format("State request ids from %s are %s", sender,
-                                    Arrays.toString(ids)));
-        }
-        ByteBuffer msg = bufferPool.allocate(MAX_SEG_SIZE);
-        for (UUID id : ids) {
-            msg.clear();
-            msg.position(MESSAGE_HEADER_BYTE_SIZE);
-            ReplicatedState state = localState.get(id);
-            if (state == null) {
-                log.warn(String.format("unable to find state %s on %s requested from %s",
-                                       id, localAddress, sender));
-                continue;
-            }
-            state.writeTo(msg);
-            send(UPDATE, msg, sender);
-        }
-    }
-
-    private void handleUpdate(InetSocketAddress sender, ByteBuffer buffer) {
-        if (sender.equals(localAddress)) {
-            if (log.isTraceEnabled()) {
-                log.trace(format("Ignoring update from self %s", sender));
-            }
-            return;
-        }
-        final ReplicatedState state;
-        try {
-            state = new ReplicatedState(buffer);
-        } catch (Throwable e) {
-            if (log.isWarnEnabled()) {
-                log.warn("Cannot deserialize state. Ignoring the state.", e);
-            }
-            return;
-        }
-        if (log.isTraceEnabled()) {
-            log.trace(format("Update state from %s is : %s", sender, state));
-        }
-        Endpoint endpoint = new Endpoint(fdFactory.create(), state);
-        if (members.putIfAbsent(sender, endpoint) == null) {
-            listener.register(state.getId(), state.getState());
-        } else {
-            endpoint.update(state.getDigest());
-            listener.update(state.getId(), state.getState());
-        }
-    }
-
-    private Runnable heartbeatTask() {
-        return new Runnable() {
-            @Override
-            public void run() {
-                long now = System.currentTimeMillis();
-                List<Digest> digests = new ArrayList<>();
-                digests.add(new Digest(HEARTBEAT, now));
-                for (ReplicatedState state : localState.values()) {
-                    digests.add(new Digest(state.getId(), state.getTime()));
-                }
-                sendDigests(digests);
-            }
-        };
-    }
-
-    private void processInbound(InetSocketAddress sender, ByteBuffer buffer)
-                                                                            throws UnknownHostException {
-        byte msgType = buffer.get();
-        switch (msgType) {
-            case DIGESTS: {
-                handleDigests(sender, buffer);
-                break;
-            }
-            case UPDATE: {
-                handleUpdate(sender, buffer);
-                break;
-            }
-            case DEREGISTER: {
-                handleDeregister(sender, buffer);
-                break;
-            }
-            case STATE_REQUEST: {
-                handleStateRequest(sender, buffer);
-                break;
-            }
-            default: {
-                if (log.isInfoEnabled()) {
-                    log.info(format("invalid message type: %s from: %s",
-                                    msgType, this));
-                }
-            }
-        }
-    }
-
-    private void requestState(InetSocketAddress sender, List<UUID> updates) {
-        ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
-        buffer.order(ByteOrder.BIG_ENDIAN);
-        for (int i = 0; i < updates.size();) {
-            buffer.position(MESSAGE_HEADER_BYTE_SIZE);
-            byte count = (byte) min(maxUuids, updates.size() - i);
-            buffer.put(count);
-            for (UUID id : updates.subList(i, i + count)) {
-                buffer.putLong(id.getMostSignificantBits());
-                buffer.putLong(id.getLeastSignificantBits());
-            }
-            send(STATE_REQUEST, buffer, sender);
-            i += count;
-            buffer.clear();
-        }
-        bufferPool.free(buffer);
-    }
-
     private void send(byte msgType, ByteBuffer buffer, InetSocketAddress target) {
         if (p2pSocket.isClosed()) {
             log.trace(String.format("Sending on a closed socket"));
@@ -618,7 +453,8 @@ public class Engine {
         try {
             addMac(bytes, 0, msgLength);
         } catch (ShortBufferException e) {
-            log.error("Invalid message %s",
+            log.error("Invalid message (%s) %s",
+                      type(msgType),
                       prettyPrint(getLocalAddress(), target, buffer.array(),
                                   msgLength));
             return;
@@ -630,7 +466,8 @@ public class Engine {
             DatagramPacket packet = new DatagramPacket(bytes, totalLength,
                                                        target);
             if (log.isTraceEnabled()) {
-                log.trace(String.format("sending packet mac start: %s %s",
+                log.trace(String.format("sending %s packet mac start: %s %s",
+                                        type(msgType),
                                         msgLength,
                                         prettyPrint(getLocalAddress(), target,
                                                     buffer.array(), totalLength)));
@@ -660,7 +497,7 @@ public class Engine {
             for (Digest digest : digests.subList(i, i + count)) {
                 digest.writeTo(buffer);
             }
-            send(DIGESTS, buffer, groupAddess);
+            send(DIGESTS, buffer, groupAddress);
             i += count;
             buffer.clear();
         }
@@ -764,5 +601,240 @@ public class Engine {
                 }
             }
         };
+    }
+
+    /**
+     * @param msgType
+     * @return
+     */
+    private String type(byte msgType) {
+        switch (msgType) {
+            case DIGESTS: {
+                return "digests";
+            }
+            case UPDATE: {
+                return "update";
+            }
+            case DEREGISTER: {
+                return "deregister";
+            }
+            case STATE_REQUEST: {
+                return "state request";
+            }
+            default: {
+                if (log.isInfoEnabled()) {
+                    log.info(format("invalid message type: %s", msgType));
+                }
+                throw new IllegalArgumentException(
+                                                   String.format("Invalid message type %s",
+                                                                 msgType));
+            }
+        }
+    }
+
+    Digest[] extractDigests(SocketAddress sender, ByteBuffer msg) {
+        int count = msg.get();
+        final Digest[] digests = new Digest[count];
+        for (int i = 0; i < count; i++) {
+            Digest digest;
+            try {
+                digest = new Digest(msg);
+            } catch (Throwable e) {
+                if (log.isWarnEnabled()) {
+                    log.warn(String.format("Cannot deserialize digest. Ignoring the digest: %s\n%s",
+                                           i,
+                                           prettyPrint(sender,
+                                                       getLocalAddress(),
+                                                       msg.array(), msg.limit())),
+                             e);
+                }
+                continue;
+            }
+            digests[i] = digest;
+        }
+        return digests;
+    }
+
+    void handleDeregister(InetSocketAddress sender, ByteBuffer buffer) {
+        if (sender.equals(localAddress)) {
+            if (log.isTraceEnabled()) {
+                log.trace(format("Ignoring deregister from self %s", sender));
+            }
+            return;
+        }
+        UUID stateId = new UUID(buffer.getLong(), buffer.getLong());
+        Endpoint endpoint = members.get(sender);
+        if (endpoint == null) {
+            log.trace(String.format("Remove %s from unknown member %s",
+                                    stateId, sender));
+            return;
+        }
+        endpoint.remove(stateId);
+        listener.deregister(stateId);
+    }
+
+    void handleDigests(InetSocketAddress sender, ByteBuffer buffer)
+                                                                   throws UnknownHostException {
+        if (sender.equals(localAddress)) {
+            if (log.isTraceEnabled()) {
+                log.trace(String.format("ignoring digests received from self on %s",
+                                        localAddress));
+            }
+            return;
+        }
+        Digest[] digests = extractDigests(sender, buffer);
+        if (log.isTraceEnabled()) {
+            log.trace(String.format("Digests from %s are %s", sender,
+                                    Arrays.toString(digests)));
+        }
+        Endpoint endpoint = members.get(sender);
+        if (endpoint == null) {
+            Endpoint newEndpoint = new Endpoint(fdFactory.create());
+            endpoint = members.putIfAbsent(sender, newEndpoint);
+            if (endpoint == null) {
+                if (log.isDebugEnabled()) {
+                    log.debug(String.format("Discovered %s on %s", sender,
+                                            localAddress));
+                }
+                endpoint = newEndpoint;
+            }
+        }
+        List<UUID> updates = endpoint.getUpdates(digests);
+        if (!updates.isEmpty()) {
+            if (log.isTraceEnabled()) {
+                log.trace(String.format("Requesting updates %s from %s from %s",
+                                        updates, sender, localAddress));
+            }
+            requestState(sender, updates);
+        }
+    }
+
+    void handleStateRequest(InetSocketAddress sender, ByteBuffer buffer) {
+        UUID[] ids = extractIds(sender, buffer);
+        if (log.isTraceEnabled()) {
+            log.trace(String.format("State request ids from %s are %s", sender,
+                                    Arrays.toString(ids)));
+        }
+        ByteBuffer msg = bufferPool.allocate(MAX_SEG_SIZE);
+        for (UUID id : ids) {
+            ReplicatedState state = localState.get(id);
+            if (state != null) {
+                msg.clear();
+                msg.position(MESSAGE_HEADER_BYTE_SIZE);
+                state.writeTo(msg);
+                if (log.isTraceEnabled()) {
+                    log.trace(String.format("Sending state %s update from %s, requested by %s",
+                                            id, localAddress, sender));
+                }
+            } else {
+                log.warn(String.format("unable to find state %s on %s requested from %s",
+                                       id, localAddress, sender));
+            }
+            send(UPDATE, msg, sender);
+        }
+    }
+
+    void handleUpdate(InetSocketAddress sender, ByteBuffer buffer) {
+        if (sender.equals(localAddress)) {
+            if (log.isTraceEnabled()) {
+                log.trace(format("Ignoring update from self %s", sender));
+            }
+            return;
+        }
+        final ReplicatedState state;
+        try {
+            state = new ReplicatedState(buffer);
+        } catch (Throwable e) {
+            if (log.isWarnEnabled()) {
+                log.warn("Cannot deserialize state. Ignoring the state.", e);
+            }
+            return;
+        }
+        Endpoint endpoint = new Endpoint(fdFactory.create());
+        Endpoint prev = members.putIfAbsent(sender, endpoint);
+        if (prev != null) {
+            endpoint = prev;
+        }
+        endpoint.update(state, listener);
+        if (log.isTraceEnabled()) {
+            log.trace(format("Update state %s from %s is : %s", state.getId(),
+                             sender, state));
+        }
+    }
+
+    Runnable heartbeatTask() {
+        return new Runnable() {
+            @Override
+            public void run() {
+                long now = System.currentTimeMillis();
+                List<Digest> digests = new ArrayList<>();
+                digests.add(new Digest(HEARTBEAT, now));
+                for (ReplicatedState state : localState.values()) {
+                    digests.add(new Digest(state.getId(), state.getTime()));
+                }
+                sendDigests(digests);
+            }
+        };
+    }
+
+    /**
+     * @return
+     */
+    Runnable multicastServiceTask() {
+        return serviceTask(multicastSocket, "multicast");
+    }
+
+    /**
+     * @return
+     */
+    Runnable p2pServiceTask() {
+        return serviceTask(p2pSocket, "p2p");
+    }
+
+    void processInbound(InetSocketAddress sender, ByteBuffer buffer)
+                                                                    throws UnknownHostException {
+        byte msgType = buffer.get();
+        switch (msgType) {
+            case DIGESTS: {
+                handleDigests(sender, buffer);
+                break;
+            }
+            case UPDATE: {
+                handleUpdate(sender, buffer);
+                break;
+            }
+            case DEREGISTER: {
+                handleDeregister(sender, buffer);
+                break;
+            }
+            case STATE_REQUEST: {
+                handleStateRequest(sender, buffer);
+                break;
+            }
+            default: {
+                if (log.isInfoEnabled()) {
+                    log.info(format("invalid message type: %s from: %s",
+                                    msgType, this));
+                }
+            }
+        }
+    }
+
+    void requestState(InetSocketAddress sender, List<UUID> updates) {
+        ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
+        buffer.order(ByteOrder.BIG_ENDIAN);
+        for (int i = 0; i < updates.size();) {
+            buffer.position(MESSAGE_HEADER_BYTE_SIZE);
+            byte count = (byte) min(maxUuids, updates.size() - i);
+            buffer.put(count);
+            for (UUID id : updates.subList(i, i + count)) {
+                buffer.putLong(id.getMostSignificantBits());
+                buffer.putLong(id.getLeastSignificantBits());
+            }
+            send(STATE_REQUEST, buffer, sender);
+            i += count;
+            buffer.clear();
+        }
+        bufferPool.free(buffer);
     }
 }
