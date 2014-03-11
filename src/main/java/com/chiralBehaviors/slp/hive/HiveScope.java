@@ -175,7 +175,9 @@ public class HiveScope implements ServiceScope {
         byte weight = state[0];
         byte priority = state[1];
         int len = state[2] << 8 | state[3] & 0xff;
-        log.info(String.format("Deserializing: %s", new String(state)));
+        if (log.isTraceEnabled()) {
+            log.trace(String.format("Deserializing: %s", new String(state)));
+        }
         String url = "service:" + new String(state, 4, len);
         Map<String, String> properties = propertiesFrom(state, len + 4);
         ServiceURL serviceUrl;
