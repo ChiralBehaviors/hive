@@ -22,9 +22,12 @@ import java.net.InetSocketAddress;
 import java.net.InterfaceAddress;
 import java.net.MulticastSocket;
 import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.util.Enumeration;
 
 import com.chiralBehaviors.slp.hive.Engine;
 import com.fasterxml.uuid.Generators;
+import com.hellblazer.utils.Tuple;
 
 /**
  * @author hhildebrand
@@ -40,7 +43,17 @@ public class BroadcastConfiguration extends EngineConfiguration {
      */
     @Override
     public Engine construct() throws IOException {
-        NetworkInterface networkInterface = getNetworkInterface();
+        Tuple<NetworkInterface, InetSocketAddress> tuple = getNetworkInterface();
+        DatagramSocket socket = new MulticastSocket(new InetSocketAddress(port));
+        socket.setReuseAddress(true);
+        socket.setBroadcast(true);
+        return new Engine(getFdFactory(), Generators.timeBasedGenerator(),
+                          heartbeatPeriod, heartbeatUnit, socket, tuple.b,
+                          receiveBufferMultiplier, sendBufferMultiplier,
+                          getMac(), tuple.a);
+    }
+
+    InetSocketAddress getBroadcastAddress(NetworkInterface networkInterface) {
         InetSocketAddress broadcastAddress = null;
         for (InterfaceAddress addr : networkInterface.getInterfaceAddresses()) {
             if (ipv4) {
@@ -61,18 +74,37 @@ public class BroadcastConfiguration extends EngineConfiguration {
                 }
             }
         }
-        if (broadcastAddress == null) {
-            throw new IllegalStateException(
-                                            String.format("Unable to find a suitable address on interface %s",
-                                                          networkInterface));
-        }
-        DatagramSocket socket = new MulticastSocket(new InetSocketAddress(port));
-        socket.setReuseAddress(true);
-        socket.setBroadcast(true);
-        return new Engine(getFdFactory(), Generators.timeBasedGenerator(),
-                          heartbeatPeriod, heartbeatUnit, socket,
-                          broadcastAddress, receiveBufferMultiplier,
-                          sendBufferMultiplier, getMac(), networkInterface);
+        return broadcastAddress;
     }
 
+    public Tuple<NetworkInterface, InetSocketAddress> getNetworkInterface()
+                                                                           throws SocketException {
+        if (networkInterface == null) {
+            for (Enumeration<NetworkInterface> intfs = NetworkInterface.getNetworkInterfaces(); intfs.hasMoreElements();) {
+                NetworkInterface iface = intfs.nextElement();
+                InetSocketAddress broadcastAddress = getBroadcastAddress(iface);
+                if (broadcastAddress != null) {
+                    return new Tuple<NetworkInterface, InetSocketAddress>(
+                                                                          iface,
+                                                                          broadcastAddress);
+                }
+            }
+            throw new IllegalStateException(
+                                            "No interface supporting broadcast was discovered");
+        }
+        NetworkInterface iface = NetworkInterface.getByName(networkInterface);
+        if (iface == null) {
+            throw new IllegalArgumentException(
+                                               String.format("Cannot find network interface: %s ",
+                                                             networkInterface));
+        }
+        InetSocketAddress broadcastAddress = getBroadcastAddress(iface);
+        if (broadcastAddress == null) {
+            throw new IllegalStateException(
+                                            String.format("The interface [%s] does not broadcast",
+                                                          networkInterface));
+        }
+        return new Tuple<NetworkInterface, InetSocketAddress>(iface,
+                                                              broadcastAddress);
+    }
 }

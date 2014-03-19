@@ -17,11 +17,8 @@
 package com.chiralBehaviors.slp.hive.configuration;
 
 import java.io.IOException;
-import java.net.NetworkInterface;
-import java.net.SocketException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.util.Enumeration;
 import java.util.concurrent.TimeUnit;
 
 import javax.crypto.Mac;
@@ -81,25 +78,5 @@ abstract public class EngineConfiguration {
                                                           hmacKey, hmac));
         }
         return mac;
-    }
-
-    public NetworkInterface getNetworkInterface() throws SocketException {
-        if (networkInterface == null) {
-            for (Enumeration<NetworkInterface> intfs = NetworkInterface.getNetworkInterfaces(); intfs.hasMoreElements();) {
-                NetworkInterface intf = intfs.nextElement();
-                if (intf.supportsMulticast()) {
-                    return intf;
-                }
-            }
-            throw new IllegalStateException(
-                                            "No interface supporting multicast was discovered");
-        }
-        NetworkInterface iface = NetworkInterface.getByName(networkInterface);
-        if (iface == null) {
-            throw new IllegalArgumentException(
-                                               String.format("Cannot find network interface: %s ",
-                                                             networkInterface));
-        }
-        return iface;
     }
 }

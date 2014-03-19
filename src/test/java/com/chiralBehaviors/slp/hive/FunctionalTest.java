@@ -152,7 +152,10 @@ public class FunctionalTest {
                          listener.events.get(EventType.UNREGISTERED).size());
         }
         System.out.println("All unregistrations received");
-
+        
+        for (ServiceScope s: scopes) {
+            s.stop();
+        } 
     }
 
     private List<Engine> createEngines(int membership, boolean broadcast)
