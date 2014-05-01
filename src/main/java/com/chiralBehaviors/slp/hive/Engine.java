@@ -580,7 +580,7 @@ public class Engine {
             public void run() {
                 if (log.isInfoEnabled()) {
                     log.info(String.format("UDP %s communications started on %s",
-                                           tag, getLocalAddress()));
+                                           tag, socket.getLocalSocketAddress()));
                 }
                 while (running.get()) {
                     try {
