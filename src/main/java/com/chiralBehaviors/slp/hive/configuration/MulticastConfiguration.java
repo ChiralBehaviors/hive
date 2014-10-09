@@ -24,7 +24,7 @@ import java.net.SocketException;
 import java.util.Enumeration;
 
 import com.chiralBehaviors.slp.hive.Common;
-import com.chiralBehaviors.slp.hive.Engine;
+import com.chiralBehaviors.slp.hive.MulticastEngine;
 import com.fasterxml.uuid.Generators;
 
 /**
@@ -38,11 +38,11 @@ public class MulticastConfiguration extends EngineConfiguration {
     public int               ttl            = 1;
 
     @Override
-    public Engine construct() throws IOException {
+    public MulticastEngine construct() throws IOException {
         NetworkInterface networkInterface = getNetworkInterface();
         MulticastSocket socket = Common.connect(multicastGroup, ttl,
                                                 networkInterface);
-        return new Engine(getFdFactory(), Generators.timeBasedGenerator(),
+        return new MulticastEngine(getFdFactory(), Generators.timeBasedGenerator(),
                           heartbeatPeriod, heartbeatUnit, socket,
                           multicastGroup, receiveBufferMultiplier,
                           sendBufferMultiplier, getMac(), networkInterface);

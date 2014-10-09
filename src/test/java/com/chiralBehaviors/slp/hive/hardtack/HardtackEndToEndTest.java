@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and 
  * limitations under the License.
  */
-package com.chiralBehaviors.slp.hive;
+package com.chiralBehaviors.slp.hive.hardtack;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -29,9 +29,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Test;
 
-import com.chiralBehaviors.slp.hive.configuration.BroadcastConfiguration;
-import com.chiralBehaviors.slp.hive.configuration.EngineConfiguration;
-import com.chiralBehaviors.slp.hive.configuration.MulticastConfiguration;
+import com.chiralBehaviors.slp.hive.Engine;
+import com.chiralBehaviors.slp.hive.EngineListener;
+import com.chiralBehaviors.slp.hive.hardtack.configuration.AggregatorConfiguration;
+import com.chiralBehaviors.slp.hive.hardtack.configuration.PushConfiguration;
 
 /**
  * Basic end to end testing
@@ -39,20 +40,19 @@ import com.chiralBehaviors.slp.hive.configuration.MulticastConfiguration;
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  * 
  */
-public class EndToEndTest {
+public class HardtackEndToEndTest {
     private class Receiver implements EngineListener {
 
         private final CountDownLatch[] latches;
 
-        Receiver(int members, int id) {
+        Receiver(int members) {
             latches = new CountDownLatch[members];
-            setLatches(id);
         }
 
         public boolean await(int timeout, TimeUnit unit)
                                                         throws InterruptedException {
-            for (CountDownLatch latche : latches) {
-                if (!latche.await(timeout, unit)) {
+            for (CountDownLatch latch : latches) {
+                if (!latch.await(timeout, unit)) {
                     return false;
                 }
             }
@@ -94,34 +94,26 @@ public class EndToEndTest {
             latches[buffer.getInt()].countDown();
         }
 
-        void setLatches(int id) {
+        void setLatches() {
             for (int i = 0; i < latches.length; i++) {
-                int count = i == id ? 0 : 1;
-                latches[i] = new CountDownLatch(count);
+                latches[i] = new CountDownLatch(1);
             }
         }
     }
 
     private static final AtomicInteger count        = new AtomicInteger();
     private static final AtomicBoolean deregistered = new AtomicBoolean(false);
-    private List<Engine>       members;
+    private List<Engine>               members;
     private UUID[]                     stateIds;
+    private Receiver                   receiver;
 
     @Test
-    public void testBroadcast() throws Exception {
+    public void testPush() throws Exception {
         test(true);
     }
 
-    @Test
-    public void testMulticast() throws Exception {
-        test(false);
-    }
-
-    private Engine createDefaultCommunications(EngineListener receiver,
-                                                       boolean broadcast)
-                                                                         throws IOException {
-        EngineConfiguration config = broadcast ? new BroadcastConfiguration()
-                                              : new MulticastConfiguration();
+    private Engine createPushCommunications() throws IOException {
+        PushConfiguration config = new PushConfiguration();
         Engine engine = config.construct();
         engine.setListener(receiver);
         engine.start();
@@ -132,13 +124,14 @@ public class EndToEndTest {
         int membership = 16;
         stateIds = new UUID[membership];
 
-        Receiver[] receivers = new Receiver[membership];
-        for (int i = 0; i < membership; i++) {
-            receivers[i] = new Receiver(membership, i);
-        }
+        Receiver receiver = new Receiver(membership);
+        receiver.setLatches();
+        Engine aggregator = new AggregatorConfiguration().construct();
+        aggregator.setListener(receiver);
+        aggregator.start();
         members = new ArrayList<Engine>();
         for (int i = 0; i < membership; i++) {
-            members.add(createDefaultCommunications(receivers[i], broadcast));
+            members.add(createPushCommunications());
         }
         try {
             int id = 0;
@@ -153,17 +146,17 @@ public class EndToEndTest {
             for (int i = 0; i < membership; i++) {
                 assertTrue(String.format("initial iteration did not receive all notifications for %s",
                                          members.get(i)),
-                           receivers[i].await(30, TimeUnit.SECONDS));
+                           receiver.await(30, TimeUnit.SECONDS));
             }
             System.out.println();
             System.out.println("Initial iteration completed");
             for (int i = 1; i < 5; i++) {
-                updateAndAwait(i, membership, receivers, members);
+                updateAndAwait(i, membership, receiver, members);
                 System.out.println();
                 System.out.println("Iteration " + (i + 1) + " completed");
             }
         } finally {
-            System.out.println();
+            aggregator.stop();
             for (Engine member : members) {
                 member.stop();
             }
@@ -172,24 +165,18 @@ public class EndToEndTest {
     }
 
     private void updateAndAwait(int iteration, int membership,
-                                Receiver[] receivers,
-                                List<Engine> members2)
-                                                              throws InterruptedException {
+                                Receiver receiver, List<Engine> members2)
+                                                                         throws InterruptedException {
+        receiver.setLatches();
         int id = 0;
-        for (Receiver receiver : receivers) {
-            receiver.setLatches(id++);
-        }
-        id = 0;
         for (Engine member : members2) {
             ByteBuffer state = ByteBuffer.wrap(new byte[4]);
             state.putInt(id);
             member.update(stateIds[id], state.array());
             id++;
         }
-        for (int i = 0; i < membership; i++) {
-            assertTrue(String.format("Iteration %s did not receive all notifications for %s",
-                                     i, members2.get(i)),
-                       receivers[i].await(20, TimeUnit.SECONDS));
-        }
+        assertTrue(String.format("Iteration %s did not receive all notifications",
+                                 iteration), receiver.await(20,
+                                                            TimeUnit.SECONDS));
     }
 }

@@ -38,7 +38,6 @@ public class ReplicatedState {
 
     private final UUID   id;
     private final byte[] state;
-
     private final long   time;
 
     public ReplicatedState(ByteBuffer buffer) {

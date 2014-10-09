@@ -24,8 +24,8 @@ import java.util.concurrent.TimeUnit;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-import com.chiralBehaviors.slp.hive.Common;
 import com.chiralBehaviors.slp.hive.Engine;
+import com.chiralBehaviors.slp.hive.Common;
 import com.hellblazer.utils.Base64Coder;
 import com.hellblazer.utils.fd.FailureDetectorFactory;
 import com.hellblazer.utils.fd.impl.AdaptiveFailureDetectorFactory;

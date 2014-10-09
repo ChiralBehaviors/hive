@@ -26,6 +26,7 @@ import java.net.SocketException;
 import java.util.Enumeration;
 
 import com.chiralBehaviors.slp.hive.Engine;
+import com.chiralBehaviors.slp.hive.MulticastEngine;
 import com.fasterxml.uuid.Generators;
 import com.hellblazer.utils.Tuple;
 
@@ -47,7 +48,7 @@ public class BroadcastConfiguration extends EngineConfiguration {
         DatagramSocket socket = new MulticastSocket(new InetSocketAddress(port));
         socket.setReuseAddress(true);
         socket.setBroadcast(true);
-        return new Engine(getFdFactory(), Generators.timeBasedGenerator(),
+        return new MulticastEngine(getFdFactory(), Generators.timeBasedGenerator(),
                           heartbeatPeriod, heartbeatUnit, socket, tuple.b,
                           receiveBufferMultiplier, sendBufferMultiplier,
                           getMac(), tuple.a);

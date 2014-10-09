@@ -48,6 +48,11 @@ public class FunctionalTest {
     private static class Listener implements ServiceListener {
         final Map<EventType, List<ServiceURL>> events = new HashMap<ServiceEvent.EventType, List<ServiceURL>>();
 
+        final CountDownLatch                   modified;
+
+        final CountDownLatch                   registered;
+        final CountDownLatch                   unregistered;
+
         /**
          * @param registered
          * @param modified
@@ -62,10 +67,6 @@ public class FunctionalTest {
             events.put(EventType.MODIFIED, new ArrayList<ServiceURL>());
             events.put(EventType.UNREGISTERED, new ArrayList<ServiceURL>());
         }
-
-        final CountDownLatch registered;
-        final CountDownLatch modified;
-        final CountDownLatch unregistered;
 
         @Override
         public void serviceChanged(ServiceEvent event) {
@@ -95,6 +96,22 @@ public class FunctionalTest {
     @Test
     public void testMulticast() throws Exception {
         functionalTest(false);
+    }
+
+    private Engine createCommunications(boolean broadcast)
+                                                                  throws IOException {
+        EngineConfiguration config = broadcast ? new BroadcastConfiguration()
+                                              : new MulticastConfiguration();
+        return config.construct();
+    }
+
+    private List<Engine> createEngines(int membership, boolean broadcast)
+                                                                                 throws IOException {
+        List<Engine> members = new ArrayList<Engine>();
+        for (int i = 0; i < membership; i++) {
+            members.add(createCommunications(broadcast));
+        }
+        return members;
     }
 
     private void functionalTest(boolean broadcast) throws Exception {
@@ -152,25 +169,10 @@ public class FunctionalTest {
                          listener.events.get(EventType.UNREGISTERED).size());
         }
         System.out.println("All unregistrations received");
-        
-        for (ServiceScope s: scopes) {
+
+        for (ServiceScope s : scopes) {
             s.stop();
-        } 
-    }
-
-    private List<Engine> createEngines(int membership, boolean broadcast)
-                                                                         throws IOException {
-        List<Engine> members = new ArrayList<Engine>();
-        for (int i = 0; i < membership; i++) {
-            members.add(createCommunications(broadcast));
         }
-        return members;
-    }
-
-    private Engine createCommunications(boolean broadcast) throws IOException {
-        EngineConfiguration config = broadcast ? new BroadcastConfiguration()
-                                              : new MulticastConfiguration();
-        return config.construct();
     }
 
 }

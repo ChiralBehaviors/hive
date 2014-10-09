@@ -26,6 +26,8 @@
 
 package com.chiralBehaviors.slp.hive.configuration;
 
+import com.chiralBehaviors.slp.hive.hardtack.configuration.AggregatorConfiguration;
+import com.chiralBehaviors.slp.hive.hardtack.configuration.PushConfiguration;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonSubTypes.Type;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
@@ -37,7 +39,9 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
                @Type(value = BroadcastConfiguration.class, name = "broadcast"),
-               @Type(value = MulticastConfiguration.class, name = "multicast") })
+               @Type(value = MulticastConfiguration.class, name = "multicast"),
+               @Type(value = PushConfiguration.class, name = "push"),
+               @Type(value = AggregatorConfiguration.class, name = "aggregate") })
 public class EngineMixin {
 
 }
