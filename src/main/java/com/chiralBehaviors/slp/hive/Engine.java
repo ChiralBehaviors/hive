@@ -30,28 +30,18 @@ import static com.chiralBehaviors.slp.hive.Messages.UUID_BYTE_SIZE;
 import static java.lang.Math.min;
 import static java.lang.String.format;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.InterfaceAddress;
-import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.SocketAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -64,14 +54,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.crypto.Mac;
 import javax.crypto.ShortBufferException;
-import javax.crypto.spec.SecretKeySpec;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.uuid.NoArgGenerator;
 import com.hellblazer.utils.ByteBufferPool;
-import com.hellblazer.utils.HexDump;
 import com.hellblazer.utils.fd.FailureDetectorFactory;
 
 /**
@@ -79,121 +67,7 @@ import com.hellblazer.utils.fd.FailureDetectorFactory;
  * 
  */
 public class Engine {
-    public static final int     DEFAULT_RECEIVE_BUFFER_MULTIPLIER = 4;
-    public static final int     DEFAULT_SEND_BUFFER_MULTIPLIER    = 4;
-    public static final UUID    HEARTBEAT                         = new UUID(0,
-                                                                             0);
-    // Default MAC key used strictly for message integrity
-    private static byte[]       DEFAULT_KEY_DATA                  = {
-            (byte) 0x23, (byte) 0x45, (byte) 0x83, (byte) 0xad, (byte) 0x23,
-            (byte) 0x46, (byte) 0x83, (byte) 0xad, (byte) 0x23, (byte) 0x45,
-            (byte) 0x83, (byte) 0xad, (byte) 0x23, (byte) 0x45, (byte) 0x83,
-            (byte) 0xad                                          };
-    // Default MAC used strictly for message integrity
-    private static String       DEFAULT_MAC_TYPE                  = "HmacMD5";
-    private static final Logger log                               = LoggerFactory.getLogger(Engine.class);
-
-    public static MulticastSocket connect(InetSocketAddress mcastaddr, int ttl,
-                                          NetworkInterface netIf)
-                                                                 throws IOException {
-        MulticastSocket s = null;
-        try {
-            for (InterfaceAddress address : netIf.getInterfaceAddresses()) {
-                InetAddress ip = address.getAddress();
-                if (ip != null
-                    && mcastaddr.getAddress().getClass().equals(ip.getClass())) {
-                    s = new MulticastSocket(
-                                            new InetSocketAddress(
-                                                                  mcastaddr.getPort()));
-                    break;
-                }
-            }
-            if (s == null) {
-                throw new IllegalStateException(
-                                                "Cannot find a suitable internet address");
-            }
-        } catch (IOException e) {
-            log.error(format("Unable to bind multicast socket"), e);
-            throw e;
-        }
-        try {
-            s.joinGroup(mcastaddr, netIf);
-        } catch (IOException e) {
-            log.error(format("Unable to join group %s on %s for %s", mcastaddr,
-                             netIf, s));
-            throw e;
-        }
-        s.setTimeToLive(ttl);
-        return s;
-    }
-
-    public static DatagramSocket connect(NetworkInterface iface,
-                                         InetSocketAddress groupAddress)
-                                                                        throws SocketException {
-
-        InetAddress bind = null;
-        for (Enumeration<InetAddress> addresses = iface.getInetAddresses(); addresses.hasMoreElements();) {
-            InetAddress address = addresses.nextElement();
-            if (address.getClass().equals(groupAddress.getAddress().getClass())) {
-                bind = address;
-                break;
-            }
-        }
-        if (bind == null) {
-            throw new IllegalArgumentException(
-                                               String.format("No matching address for %s found on %s",
-                                                             groupAddress,
-                                                             iface));
-        }
-        return new DatagramSocket(new InetSocketAddress(bind, 0));
-    }
-
-    /**
-     * @return a default mac, with a fixed key. Used for validation only, no
-     *         authentication
-     */
-    public static Mac defaultMac() {
-        Mac mac;
-        try {
-            mac = Mac.getInstance(DEFAULT_MAC_TYPE);
-            mac.init(new SecretKeySpec(DEFAULT_KEY_DATA, DEFAULT_MAC_TYPE));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(
-                                            String.format("Unable to create default mac %s",
-                                                          DEFAULT_MAC_TYPE));
-        } catch (InvalidKeyException e) {
-            throw new IllegalStateException(
-                                            String.format("Invalid default key %s for default mac %s",
-                                                          Arrays.toString(DEFAULT_KEY_DATA),
-                                                          DEFAULT_MAC_TYPE));
-        }
-        return mac;
-    }
-
-    public static String prettyPrint(SocketAddress sender,
-                                     SocketAddress target, byte[] bytes,
-                                     int length) {
-        final StringBuilder sb = new StringBuilder(length * 2);
-        sb.append('\n');
-        sb.append(new SimpleDateFormat().format(new Date()));
-        sb.append(" sender: ");
-        sb.append(sender);
-        sb.append(" target: ");
-        sb.append(target);
-        sb.append(" length: ");
-        sb.append(length);
-        sb.append('\n');
-        sb.append(toHex(bytes, 0, length));
-        return sb.toString();
-    }
-
-    public static String toHex(byte[] data, int offset, int length) {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream(1024);
-        PrintStream stream = new PrintStream(baos);
-        HexDump.hexdump(stream, data, offset, length);
-        stream.close();
-        return baos.toString();
-    }
+    private static final Logger                              log        = LoggerFactory.getLogger(Engine.class);
 
     private final ByteBufferPool                             bufferPool = new ByteBufferPool(
                                                                                              "Engine Comms",
@@ -227,7 +101,7 @@ public class Engine {
         this(Executors.newScheduledThreadPool(2), fdFactory, idGenerator,
              heartbeatPeriod, heartbeatUnit, multicastSocket, groupAddress,
              receiveBufferMultiplier, sendBufferMultiplier, mac,
-             connect(iface, groupAddress));
+             Common.connect(iface, groupAddress));
     }
 
     public Engine(ScheduledExecutorService executor,
@@ -428,10 +302,10 @@ public class Engine {
                 if (log.isWarnEnabled()) {
                     log.warn(String.format("Cannot deserialize uuid. Ignoring the uuid: %s\n%s",
                                            i,
-                                           prettyPrint(sender,
-                                                       getLocalAddress(),
-                                                       msg.array(), msg.limit())),
-                             e);
+                                           Common.prettyPrint(sender,
+                                                              getLocalAddress(),
+                                                              msg.array(),
+                                                              msg.limit())), e);
                 }
                 continue;
             }
@@ -455,8 +329,8 @@ public class Engine {
         } catch (ShortBufferException e) {
             log.error("Invalid message (%s) %s",
                       type(msgType),
-                      prettyPrint(getLocalAddress(), target, buffer.array(),
-                                  msgLength));
+                      Common.prettyPrint(getLocalAddress(), target,
+                                         buffer.array(), msgLength));
             return;
         } catch (SecurityException e) {
             log.error("No key provided for HMAC");
@@ -467,10 +341,11 @@ public class Engine {
                                                        target);
             if (log.isTraceEnabled()) {
                 log.trace(String.format("sending %s packet mac start: %s %s",
-                                        type(msgType),
-                                        msgLength,
-                                        prettyPrint(getLocalAddress(), target,
-                                                    buffer.array(), totalLength)));
+                                        type(msgType), msgLength,
+                                        Common.prettyPrint(getLocalAddress(),
+                                                           target,
+                                                           buffer.array(),
+                                                           totalLength)));
             }
             p2pSocket.send(packet);
         } catch (SocketException e) {
@@ -482,7 +357,8 @@ public class Engine {
             }
         } catch (IOException e) {
             if (log.isWarnEnabled()) {
-                log.warn("Error sending packet", e);
+                log.warn(String.format("Error sending packet to: %s", target),
+                         e);
             }
         }
     }
@@ -519,10 +395,10 @@ public class Engine {
         if (log.isTraceEnabled()) {
             log.trace(String.format("Received %s packet %s",
                                     tag,
-                                    prettyPrint(packet.getSocketAddress(),
-                                                getLocalAddress(),
-                                                buffer.array(),
-                                                packet.getLength())));
+                                    Common.prettyPrint(packet.getSocketAddress(),
+                                                       getLocalAddress(),
+                                                       buffer.array(),
+                                                       packet.getLength())));
         }
         executor.execute(new Runnable() {
             @Override
@@ -563,10 +439,10 @@ public class Engine {
                         log.warn(format("%s msg with invalid MAGIC header [%s] discarded %s",
                                         tag,
                                         magic,
-                                        prettyPrint(packet.getSocketAddress(),
-                                                    getLocalAddress(),
-                                                    buffer.array(),
-                                                    packet.getLength())));
+                                        Common.prettyPrint(packet.getSocketAddress(),
+                                                           getLocalAddress(),
+                                                           buffer.array(),
+                                                           packet.getLength())));
                     }
                 }
                 bufferPool.free(buffer);
@@ -643,10 +519,10 @@ public class Engine {
                 if (log.isWarnEnabled()) {
                     log.warn(String.format("Cannot deserialize digest. Ignoring the digest: %s\n%s",
                                            i,
-                                           prettyPrint(sender,
-                                                       getLocalAddress(),
-                                                       msg.array(), msg.limit())),
-                             e);
+                                           Common.prettyPrint(sender,
+                                                              getLocalAddress(),
+                                                              msg.array(),
+                                                              msg.limit())), e);
                 }
                 continue;
             }
@@ -768,7 +644,7 @@ public class Engine {
             public void run() {
                 long now = System.currentTimeMillis();
                 List<Digest> digests = new ArrayList<>();
-                digests.add(new Digest(HEARTBEAT, now));
+                digests.add(new Digest(Common.HEARTBEAT, now));
                 for (ReplicatedState state : localState.values()) {
                     digests.add(new Digest(state.getId(), state.getTime()));
                 }

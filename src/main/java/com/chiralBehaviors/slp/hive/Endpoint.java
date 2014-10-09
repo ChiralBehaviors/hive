@@ -61,7 +61,7 @@ public class Endpoint {
         try {
             List<UUID> updates = new ArrayList<>(states.size() + 1);
             for (Digest digest : digests) {
-                if (fd != null && digest.getId().equals(Engine.HEARTBEAT)) {
+                if (fd != null && digest.getId().equals(Common.HEARTBEAT)) {
                     if (logger.isTraceEnabled()) {
                         logger.trace(String.format("received heartbeat"));
                     }
@@ -107,7 +107,7 @@ public class Endpoint {
         final ReentrantLock myLock = synch;
         myLock.lock();
         try {
-            if (fd != null && state.getId().equals(Engine.HEARTBEAT)) {
+            if (fd != null && state.getId().equals(Common.HEARTBEAT)) {
                 if (logger.isTraceEnabled()) {
                     logger.trace(String.format("received heartbeat"));
                 }

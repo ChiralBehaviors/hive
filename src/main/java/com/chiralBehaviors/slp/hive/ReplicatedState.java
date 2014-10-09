@@ -115,7 +115,7 @@ public class ReplicatedState {
     }
 
     public boolean isHeartbeat() {
-        return Engine.HEARTBEAT.equals(id);
+        return Common.HEARTBEAT.equals(id);
     }
 
     public boolean isNotifiable() {

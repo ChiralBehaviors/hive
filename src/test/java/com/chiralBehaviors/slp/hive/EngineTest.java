@@ -64,7 +64,7 @@ public class EngineTest {
     private FailureDetectorFactory   fdFactory;
     @Mock
     private NoArgGenerator           idGenerator;
-    private Mac                      mac          = Engine.defaultMac();
+    private Mac                      mac          = Common.defaultMac();
     @Mock
     private ScheduledExecutorService executor;
     @Mock
@@ -139,6 +139,6 @@ public class EngineTest {
         assertEquals(1, buffer.get());
         UUID requestedId = new UUID(buffer.getLong(), buffer.getLong());
         assertEquals(stateId, requestedId);
-        assertEquals(Engine.defaultMac().getMacLength(), buffer.remaining());
+        assertEquals(Common.defaultMac().getMacLength(), buffer.remaining());
     }
 }

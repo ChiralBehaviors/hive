@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
+import com.chiralBehaviors.slp.hive.Common;
 import com.chiralBehaviors.slp.hive.Engine;
 import com.hellblazer.utils.Base64Coder;
 import com.hellblazer.utils.fd.FailureDetectorFactory;
@@ -41,8 +42,8 @@ abstract public class EngineConfiguration {
     public String                 hmac                    = "HmacMD5";
     public String                 hmacKey                 = "I0WDrSNGg60jRYOtI0WDrQ==";
     public String                 networkInterface;
-    public int                    receiveBufferMultiplier = Engine.DEFAULT_RECEIVE_BUFFER_MULTIPLIER;
-    public int                    sendBufferMultiplier    = Engine.DEFAULT_SEND_BUFFER_MULTIPLIER;
+    public int                    receiveBufferMultiplier = Common.DEFAULT_RECEIVE_BUFFER_MULTIPLIER;
+    public int                    sendBufferMultiplier    = Common.DEFAULT_SEND_BUFFER_MULTIPLIER;
 
     abstract public Engine construct() throws IOException;
 
@@ -62,7 +63,7 @@ abstract public class EngineConfiguration {
 
     public Mac getMac() {
         if (hmac == null || hmacKey == null) {
-            return Engine.defaultMac();
+            return Common.defaultMac();
         }
         Mac mac;
         try {
