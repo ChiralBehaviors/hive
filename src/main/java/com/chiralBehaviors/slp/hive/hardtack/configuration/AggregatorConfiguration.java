@@ -42,7 +42,6 @@ public class AggregatorConfiguration extends HardtackConfiguration {
                                                                          Utils.getAddress(intf,
                                                                                           ipv4),
                                                                          port));
-        socket.setReuseAddress(true);
         return new AggregatorEngine(
                                     socket,
                                     getMac(),
