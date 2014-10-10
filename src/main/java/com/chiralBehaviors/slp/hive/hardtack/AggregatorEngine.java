@@ -109,6 +109,10 @@ public class AggregatorEngine implements Engine {
     public void start() {
         if (running.compareAndSet(false, true)) {
             Executors.newSingleThreadExecutor().execute(p2pServiceTask());
+            if (log.isInfoEnabled()) {
+                log.info(String.format("Aggregate UDP communications now started on: %s",
+                                       localAddress));
+            }
         }
     }
 
@@ -116,7 +120,7 @@ public class AggregatorEngine implements Engine {
     public void stop() {
         if (running.compareAndSet(true, false)) {
             if (log.isInfoEnabled()) {
-                log.info(String.format("Terminating UDP Communications on %s",
+                log.info(String.format("Terminating aggregate UDP Communications on %s",
                                        localAddress));
             }
             p2pSocket.close();

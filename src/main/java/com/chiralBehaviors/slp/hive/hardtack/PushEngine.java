@@ -174,8 +174,8 @@ public class PushEngine implements Engine {
     public void start() {
         if (running.compareAndSet(false, true)) {
             if (log.isInfoEnabled()) {
-                log.info(String.format("Push engine communications started on %s",
-                                       localAddress));
+                log.info(String.format("Push engine communications started on %s, aggregators: %s",
+                                       localAddress, aggregators));
             }
             heartbeatTask = executor.scheduleAtFixedRate(heartbeatTask(), 0,
                                                          heartbeatPeriod,
