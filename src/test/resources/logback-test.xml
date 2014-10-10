@@ -12,4 +12,5 @@
 	<root level="INFO">
 		<appender-ref ref="STDERR" />
 	</root>
+  <!-- <logger name="com.chiralBehaviors.slp.hive.hardtack.AggregatorEngine" level="TRACE" /> -->
 </configuration>

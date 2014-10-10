@@ -109,21 +109,9 @@ public class HardtackEndToEndTest {
 
     @Test
     public void testPush() throws Exception {
-        test(true);
-    }
-
-    private Engine createPushCommunications() throws IOException {
-        PushConfiguration config = new PushConfiguration();
-        Engine engine = config.construct();
-        engine.setListener(receiver);
-        engine.start();
-        return engine;
-    }
-
-    private void test(boolean broadcast) throws Exception {
         int membership = 16;
         stateIds = new UUID[membership];
-
+        
         Receiver receiver = new Receiver(membership);
         receiver.setLatches();
         Engine aggregator = new AggregatorConfiguration().construct();
@@ -162,6 +150,14 @@ public class HardtackEndToEndTest {
             }
         }
         assertFalse("state was deregistered", deregistered.get());
+    }
+
+    private Engine createPushCommunications() throws IOException {
+        PushConfiguration config = new PushConfiguration();
+        Engine engine = config.construct();
+        engine.setListener(receiver);
+        engine.start();
+        return engine;
     }
 
     private void updateAndAwait(int iteration, int membership,

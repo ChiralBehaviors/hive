@@ -335,6 +335,9 @@ public class AggregatorEngine implements Engine {
                                     stateId, sender));
             return;
         }
+        if (log.isTraceEnabled()) {
+            log.trace(format("Deregistering %s from %s", stateId, sender));
+        }
         endpoint.remove(stateId);
         listener.deregister(stateId);
     }

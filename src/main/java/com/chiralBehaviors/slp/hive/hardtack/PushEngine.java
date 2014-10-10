@@ -172,6 +172,10 @@ public class PushEngine implements Engine {
     @Override
     public void start() {
         if (running.compareAndSet(false, true)) {
+            if (log.isInfoEnabled()) {
+                log.info(String.format("Push engine communications started on %s",
+                                       localAddress));
+            }
             heartbeatTask = executor.scheduleAtFixedRate(heartbeatTask(), 0,
                                                          heartbeatPeriod,
                                                          heartbeatUnit);
@@ -182,7 +186,7 @@ public class PushEngine implements Engine {
     public void stop() {
         if (running.compareAndSet(true, false)) {
             if (log.isInfoEnabled()) {
-                log.info(String.format("Terminating UDP Communications on %s",
+                log.info(String.format("Terminating push UDP Communications on %s",
                                        localAddress));
             }
             heartbeatTask.cancel(true);
@@ -241,14 +245,22 @@ public class PushEngine implements Engine {
         return new Runnable() {
             @Override
             public void run() {
-                ReplicatedState state = new ReplicatedState(
-                                                            Common.HEARTBEAT,
-                                                            System.currentTimeMillis(),
-                                                            new byte[0]);
                 if (log.isDebugEnabled()) {
                     log.debug(String.format("Member: %s updating replicated state",
                                             getLocalAddress()));
                 }
+                replicate(new ReplicatedState(Common.HEARTBEAT,
+                                              System.currentTimeMillis(),
+                                              new byte[0]));
+                for (ReplicatedState state : localState.values()) {
+                    replicate(state);
+                }
+            }
+
+            /**
+             * @param state
+             */
+            void replicate(ReplicatedState state) {
                 ByteBuffer buffer = bufferPool.allocate(MAX_SEG_SIZE);
                 buffer.order(ByteOrder.BIG_ENDIAN);
                 buffer.position(MESSAGE_HEADER_BYTE_SIZE);
