@@ -26,7 +26,16 @@
 
 package com.chiralBehaviors.slp.hive.configuration;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+
 import com.chiralBehaviors.slp.hive.HiveScope;
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.hellblazer.slp.ServiceScope;
 import com.hellblazer.slp.config.ServiceScopeConfiguration;
 
@@ -35,6 +44,21 @@ import com.hellblazer.slp.config.ServiceScopeConfiguration;
  * 
  */
 public class HiveScopeConfiguration implements ServiceScopeConfiguration {
+    public static HiveScopeConfiguration fromYaml(File yaml)
+                                                            throws JsonParseException,
+                                                            JsonMappingException,
+                                                            IOException {
+        return fromYaml(new FileInputStream(yaml));
+    }
+
+    public static HiveScopeConfiguration fromYaml(InputStream yaml)
+                                                                   throws JsonParseException,
+                                                                   JsonMappingException,
+                                                                   IOException {
+        ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+        mapper.registerModule(new EngineModule());
+        return mapper.readValue(yaml, HiveScopeConfiguration.class);
+    }
 
     public EngineConfiguration engine              = new BroadcastConfiguration();
     public int                 notificationThreads = 2;
