@@ -31,6 +31,10 @@ import com.hellblazer.utils.Utils;
  */
 public class AggregatorConfiguration extends HardtackConfiguration {
 
+    public static final int DEFAULT_PORT = 56999;
+
+    public int               port         = DEFAULT_PORT;
+
     /* (non-Javadoc)
      * @see com.chiralBehaviors.slp.hive.configuration.EngineConfiguration#construct()
      */

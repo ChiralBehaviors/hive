@@ -28,7 +28,6 @@ import com.chiralBehaviors.slp.hive.configuration.EngineConfiguration;
 public abstract class HardtackConfiguration extends EngineConfiguration {
 
     public boolean ipv4 = true;
-    public int     port = 56999;
 
     protected NetworkInterface getNetworkInterface() throws SocketException {
         if (networkInterface == null) {

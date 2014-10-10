@@ -139,9 +139,8 @@ public class Common {
         return new DatagramSocket(new InetSocketAddress(bind, 0));
     }
 
-    public static String prettyPrint(SocketAddress sender,
-                                     SocketAddress target, byte[] bytes,
-                                     int length) {
+    public static String prettyPrint(SocketAddress sender, Object target,
+                                     byte[] bytes, int length) {
         final StringBuilder sb = new StringBuilder(length * 2);
         sb.append('\n');
         sb.append(new SimpleDateFormat().format(new Date()));

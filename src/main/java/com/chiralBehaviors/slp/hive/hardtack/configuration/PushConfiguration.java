@@ -20,6 +20,8 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.Executors;
 
 import com.chiralBehaviors.slp.hive.Engine;
@@ -33,6 +35,9 @@ import com.hellblazer.utils.Utils;
  */
 public class PushConfiguration extends HardtackConfiguration {
 
+    public List<InetSocketAddress> aggregators = Arrays.asList(new InetSocketAddress(
+                                                                                     Integer.valueOf(AggregatorConfiguration.DEFAULT_PORT)));
+
     /* (non-Javadoc)
      * @see com.chiralBehaviors.slp.hive.configuration.EngineConfiguration#construct()
      */
@@ -44,10 +49,18 @@ public class PushConfiguration extends HardtackConfiguration {
                                                       new InetSocketAddress(
                                                                             address,
                                                                             Utils.allocatePort(address)));
-        InetSocketAddress aggregator = new InetSocketAddress(address, port);
+        int i = 0;
+        for (InetSocketAddress aggregator : aggregators) {
+            if (aggregator.getAddress().isAnyLocalAddress()) {
+                aggregators.set(i++,
+                                new InetSocketAddress(address,
+                                                      aggregator.getPort()));
+            }
+        }
         return new PushEngine(p2pSocket, getMac(),
-                              Generators.timeBasedGenerator(), aggregator,
+                              Generators.timeBasedGenerator(), aggregators,
                               heartbeatPeriod, heartbeatUnit,
                               Executors.newSingleThreadScheduledExecutor());
+
     }
 }

@@ -28,13 +28,16 @@ package com.chiralBehaviors.slp.hive.hardtack;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -70,7 +73,8 @@ public class PushEngineTest {
     @Mock
     private EngineListener           listener;
 
-    private InetSocketAddress        aggregator = new InetSocketAddress(0);
+    private List<InetSocketAddress>  aggregator = Arrays.asList(new InetSocketAddress(
+                                                                                      0));
     private PushEngine               engine;
 
     @Before
@@ -90,7 +94,7 @@ public class PushEngineTest {
         verify(p2p).send(captor.capture());
         DatagramPacket packet = captor.getValue();
         assertNotNull(packet);
-        assertEquals(aggregator, packet.getSocketAddress());
+        assertEquals(aggregator.get(0), packet.getSocketAddress());
 
     }
 
@@ -107,6 +111,6 @@ public class PushEngineTest {
         verify(p2p).send(captor.capture());
         DatagramPacket packet = captor.getValue();
         assertNotNull(packet);
-        assertEquals(aggregator, packet.getSocketAddress());
+        assertEquals(aggregator.get(0), packet.getSocketAddress());
     }
 }

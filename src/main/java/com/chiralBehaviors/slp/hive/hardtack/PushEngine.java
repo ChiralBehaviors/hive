@@ -32,6 +32,7 @@ import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -73,15 +74,15 @@ public class PushEngine implements Engine {
     private ScheduledFuture<?>                         heartbeatTask;
     private final TimeUnit                             heartbeatUnit;
     private final ScheduledExecutorService             executor;
-    private final InetSocketAddress                    aggregator;
+    private final List<InetSocketAddress>              aggregators;
 
     public PushEngine(DatagramSocket p2pSocket, Mac mac,
-                      NoArgGenerator idGenerator, InetSocketAddress aggregator,
-                      int heartbeatPeriod, TimeUnit heartbeatUnit,
-                      ScheduledExecutorService executor) {
+                      NoArgGenerator idGenerator,
+                      List<InetSocketAddress> aggregators, int heartbeatPeriod,
+                      TimeUnit heartbeatUnit, ScheduledExecutorService executor) {
         this.heartbeatPeriod = heartbeatPeriod;
         this.heartbeatUnit = heartbeatUnit;
-        this.aggregator = aggregator;
+        this.aggregators = aggregators;
         this.idGenerator = idGenerator;
         hmac = mac;
         this.p2pSocket = p2pSocket;
@@ -108,7 +109,7 @@ public class PushEngine implements Engine {
         try {
             buffer.putLong(id.getMostSignificantBits());
             buffer.putLong(id.getLeastSignificantBits());
-            send(DEREGISTER, buffer, aggregator);
+            send(DEREGISTER, buffer, aggregators);
         } finally {
             bufferPool.free(buffer);
         }
@@ -149,7 +150,7 @@ public class PushEngine implements Engine {
         buffer.position(MESSAGE_HEADER_BYTE_SIZE);
         try {
             state.writeTo(buffer);
-            send(UPDATE, buffer, aggregator);
+            send(UPDATE, buffer, aggregators);
         } finally {
             bufferPool.free(buffer);
         }
@@ -228,7 +229,7 @@ public class PushEngine implements Engine {
         buffer.position(MESSAGE_HEADER_BYTE_SIZE);
         try {
             state.writeTo(buffer);
-            send(UPDATE, buffer, aggregator);
+            send(UPDATE, buffer, aggregators);
         } finally {
             bufferPool.free(buffer);
         }
@@ -266,7 +267,7 @@ public class PushEngine implements Engine {
                 buffer.position(MESSAGE_HEADER_BYTE_SIZE);
                 try {
                     state.writeTo(buffer);
-                    send(UPDATE, buffer, aggregator);
+                    send(UPDATE, buffer, aggregators);
                 } finally {
                     bufferPool.free(buffer);
                 }
@@ -274,7 +275,8 @@ public class PushEngine implements Engine {
         };
     }
 
-    private void send(byte msgType, ByteBuffer buffer, InetSocketAddress target) {
+    private void send(byte msgType, ByteBuffer buffer,
+                      List<InetSocketAddress> targets) {
         if (p2pSocket.isClosed()) {
             log.trace(String.format("Sending on a closed socket"));
             return;
@@ -289,36 +291,39 @@ public class PushEngine implements Engine {
         } catch (ShortBufferException e) {
             log.error("Invalid message (%s) %s",
                       type(msgType),
-                      Common.prettyPrint(getLocalAddress(), target,
+                      Common.prettyPrint(getLocalAddress(), targets,
                                          buffer.array(), msgLength));
             return;
         } catch (SecurityException e) {
             log.error("No key provided for HMAC");
             return;
         }
-        try {
-            DatagramPacket packet = new DatagramPacket(bytes, totalLength,
-                                                       target);
-            if (log.isTraceEnabled()) {
-                log.trace(String.format("sending %s packet mac start: %s %s",
-                                        type(msgType), msgLength,
-                                        Common.prettyPrint(getLocalAddress(),
-                                                           target,
-                                                           buffer.array(),
-                                                           totalLength)));
-            }
-            p2pSocket.send(packet);
-        } catch (SocketException e) {
-            if (!"Socket is closed".equals(e.getMessage())
-                && !"Bad file descriptor".equals(e.getMessage())) {
-                if (log.isWarnEnabled()) {
-                    log.warn("Error sending packet", e);
+        for (InetSocketAddress target : targets) {
+            try {
+                DatagramPacket packet = new DatagramPacket(bytes, totalLength,
+                                                           target);
+                if (log.isTraceEnabled()) {
+                    log.trace(String.format("sending %s packet mac start: %s %s",
+                                            type(msgType),
+                                            msgLength,
+                                            Common.prettyPrint(getLocalAddress(),
+                                                               target,
+                                                               buffer.array(),
+                                                               totalLength)));
                 }
-            }
-        } catch (IOException e) {
-            if (log.isWarnEnabled()) {
-                log.warn(String.format("Error sending packet to: %s", target),
-                         e);
+                p2pSocket.send(packet);
+            } catch (SocketException e) {
+                if (!"Socket is closed".equals(e.getMessage())
+                    && !"Bad file descriptor".equals(e.getMessage())) {
+                    if (log.isWarnEnabled()) {
+                        log.warn("Error sending packet", e);
+                    }
+                }
+            } catch (IOException e) {
+                if (log.isWarnEnabled()) {
+                    log.warn(String.format("Error sending packet to: %s",
+                                           targets), e);
+                }
             }
         }
     }
