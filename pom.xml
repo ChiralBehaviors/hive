@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.chiralBehaviors</groupId>
 	<artifactId>hive</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>0.0.1</version>
 	<name>Hive - Broadcast/Multicast Service Discovery</name>
 	<description>A service discovery framework using UDP multicast or UDP broadcast</description>
 
@@ -32,12 +32,16 @@
 		<url>https://github.com/ChiralBehaviors/hive</url>
 	</scm>
 
-	<repositories>
-		<repository>
-			<id>hellblazer-snapshots</id>
-			<url>http://repository-hal900000.forge.cloudbees.com/snapshot/</url>
-		</repository>
-	</repositories>
+    <repositories>
+        <repository>
+            <id>ChiralBehaviors-Snapshots</id>
+            <url>http://repository-chiralbehaviors.forge.cloudbees.com/snapshot/</url>
+        </repository>
+        <repository>
+            <id>ChiralBehaviors-release</id>
+            <url>http://repository-chiralbehaviors.forge.cloudbees.com/release/</url>
+        </repository>
+    </repositories>
 
 	<build>
 		<plugins>
@@ -70,7 +74,7 @@
 		<dependency>
 			<groupId>com.hellblazer</groupId>
 			<artifactId>service-discovery</artifactId>
-			<version>1.0.2-SNAPSHOT</version>
+			<version>1.0.2</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.uuid</groupId>
@@ -122,7 +126,7 @@
 		<dependency>
 			<groupId>com.chiralbehaviors</groupId>
 			<artifactId>failure-detectors</artifactId>
-			<version>0.0.1-SNAPSHOT</version>
+			<version>0.0.1</version>
 		</dependency>
 	</dependencies>
 </project>
