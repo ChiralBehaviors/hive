@@ -577,8 +577,9 @@ public class MulticastEngine implements Engine {
                                     stateId, sender));
             return;
         }
-        endpoint.remove(stateId);
-        listener.deregister(stateId);
+        if (endpoint.remove(stateId) != null) {
+            listener.deregister(stateId);
+        }
     }
 
     void handleDigests(InetSocketAddress sender, ByteBuffer buffer)

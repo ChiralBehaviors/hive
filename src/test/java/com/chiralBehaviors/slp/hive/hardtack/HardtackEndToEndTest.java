@@ -111,10 +111,10 @@ public class HardtackEndToEndTest {
     public void testPush() throws Exception {
         int membership = 16;
         stateIds = new UUID[membership];
-        
+
         Receiver receiver = new Receiver(membership);
         receiver.setLatches();
-        Engine aggregator = new AggregatorConfiguration().construct();
+        Engine aggregator = AggregatorConfiguration.fromYaml(getClass().getResourceAsStream("/aggregator.yml")).construct();
         aggregator.setListener(receiver);
         aggregator.start();
         members = new ArrayList<Engine>();
@@ -153,7 +153,7 @@ public class HardtackEndToEndTest {
     }
 
     private Engine createPushCommunications() throws IOException {
-        PushConfiguration config = new PushConfiguration();
+        PushConfiguration config = PushConfiguration.fromYaml(getClass().getResourceAsStream("/push.yml"));
         Engine engine = config.construct();
         engine.setListener(receiver);
         engine.start();

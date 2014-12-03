@@ -342,8 +342,9 @@ public class AggregatorEngine implements Engine {
         if (log.isTraceEnabled()) {
             log.trace(format("Deregistering %s from %s", stateId, sender));
         }
-        endpoint.remove(stateId);
-        listener.deregister(stateId);
+        if (endpoint.remove(stateId) != null) {
+            listener.deregister(stateId);
+        }
     }
 
     /**

@@ -15,7 +15,10 @@
 
 package com.chiralBehaviors.slp.hive.hardtack.configuration;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -26,6 +29,10 @@ import java.util.concurrent.Executors;
 
 import com.chiralBehaviors.slp.hive.Engine;
 import com.chiralBehaviors.slp.hive.hardtack.PushEngine;
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.uuid.Generators;
 import com.hellblazer.utils.Utils;
 
@@ -34,6 +41,21 @@ import com.hellblazer.utils.Utils;
  *
  */
 public class PushConfiguration extends HardtackConfiguration {
+    public static PushConfiguration fromYaml(File yaml)
+                                                       throws JsonParseException,
+                                                       JsonMappingException,
+                                                       IOException {
+        return fromYaml(new FileInputStream(yaml));
+    }
+
+    public static PushConfiguration fromYaml(InputStream yaml)
+                                                              throws JsonParseException,
+                                                              JsonMappingException,
+                                                              IOException {
+        ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+        //mapper.registerModule(new EngineModule());
+        return mapper.readValue(yaml, PushConfiguration.class);
+    }
 
     public List<InetSocketAddress> aggregators = Arrays.asList(new InetSocketAddress(
                                                                                      Integer.valueOf(AggregatorConfiguration.DEFAULT_PORT)));

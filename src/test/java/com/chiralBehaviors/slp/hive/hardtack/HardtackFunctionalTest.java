@@ -101,7 +101,7 @@ public class HardtackFunctionalTest {
         }
 
         HiveScope aggregator = new HiveScope(
-                                             new AggregatorConfiguration().construct());
+                                             AggregatorConfiguration.fromYaml(getClass().getResourceAsStream("/aggregator.yml")).construct());
         Listener listener = new Listener(registered, modified, unregistered);
         aggregator.addServiceListener(listener,
                                       String.format("(%s=*)",
@@ -154,7 +154,7 @@ public class HardtackFunctionalTest {
     private List<Engine> createEngines(int membership) throws IOException {
         List<Engine> members = new ArrayList<Engine>();
         for (int i = 0; i < membership; i++) {
-            members.add(new PushConfiguration().construct());
+            members.add(PushConfiguration.fromYaml(getClass().getResourceAsStream("/push.yml")).construct());
         }
         return members;
     }

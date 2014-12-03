@@ -16,7 +16,10 @@
 
 package com.chiralBehaviors.slp.hive.configuration;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.NetworkInterface;
@@ -25,6 +28,10 @@ import java.util.Enumeration;
 
 import com.chiralBehaviors.slp.hive.Common;
 import com.chiralBehaviors.slp.hive.MulticastEngine;
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.uuid.Generators;
 
 /**
@@ -32,6 +39,22 @@ import com.fasterxml.uuid.Generators;
  * 
  */
 public class MulticastConfiguration extends EngineConfiguration {
+    public static MulticastConfiguration fromYaml(File yaml)
+                                                            throws JsonParseException,
+                                                            JsonMappingException,
+                                                            IOException {
+        return fromYaml(new FileInputStream(yaml));
+    }
+
+    public static MulticastConfiguration fromYaml(InputStream yaml)
+                                                                   throws JsonParseException,
+                                                                   JsonMappingException,
+                                                                   IOException {
+        ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+        //mapper.registerModule(new EngineModule());
+        return mapper.readValue(yaml, MulticastConfiguration.class);
+    }
+
     public InetSocketAddress multicastGroup = new InetSocketAddress(
                                                                     "233.1.2.30",
                                                                     1966);
@@ -42,10 +65,12 @@ public class MulticastConfiguration extends EngineConfiguration {
         NetworkInterface networkInterface = getNetworkInterface();
         MulticastSocket socket = Common.connect(multicastGroup, ttl,
                                                 networkInterface);
-        return new MulticastEngine(getFdFactory(), Generators.timeBasedGenerator(),
-                          heartbeatPeriod, heartbeatUnit, socket,
-                          multicastGroup, receiveBufferMultiplier,
-                          sendBufferMultiplier, getMac(), networkInterface);
+        return new MulticastEngine(getFdFactory(),
+                                   Generators.timeBasedGenerator(),
+                                   heartbeatPeriod, heartbeatUnit, socket,
+                                   multicastGroup, receiveBufferMultiplier,
+                                   sendBufferMultiplier, getMac(),
+                                   networkInterface);
     }
 
     public NetworkInterface getNetworkInterface() throws SocketException {

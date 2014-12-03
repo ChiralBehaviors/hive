@@ -16,7 +16,10 @@
 
 package com.chiralBehaviors.slp.hive.configuration;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.InterfaceAddress;
@@ -27,6 +30,10 @@ import java.util.Enumeration;
 
 import com.chiralBehaviors.slp.hive.Engine;
 import com.chiralBehaviors.slp.hive.MulticastEngine;
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.uuid.Generators;
 import com.hellblazer.utils.Tuple;
 
@@ -35,6 +42,21 @@ import com.hellblazer.utils.Tuple;
  * 
  */
 public class BroadcastConfiguration extends EngineConfiguration {
+    public static BroadcastConfiguration fromYaml(File yaml)
+                                                            throws JsonParseException,
+                                                            JsonMappingException,
+                                                            IOException {
+        return fromYaml(new FileInputStream(yaml));
+    }
+
+    public static BroadcastConfiguration fromYaml(InputStream yaml)
+                                                                   throws JsonParseException,
+                                                                   JsonMappingException,
+                                                                   IOException {
+        ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+        mapper.registerModule(new EngineModule());
+        return mapper.readValue(yaml, BroadcastConfiguration.class);
+    }
 
     public boolean ipv4 = true;
     public int     port = 56999;
@@ -48,10 +70,11 @@ public class BroadcastConfiguration extends EngineConfiguration {
         DatagramSocket socket = new MulticastSocket(new InetSocketAddress(port));
         socket.setReuseAddress(true);
         socket.setBroadcast(true);
-        return new MulticastEngine(getFdFactory(), Generators.timeBasedGenerator(),
-                          heartbeatPeriod, heartbeatUnit, socket, tuple.b,
-                          receiveBufferMultiplier, sendBufferMultiplier,
-                          getMac(), tuple.a);
+        return new MulticastEngine(getFdFactory(),
+                                   Generators.timeBasedGenerator(),
+                                   heartbeatPeriod, heartbeatUnit, socket,
+                                   tuple.b, receiveBufferMultiplier,
+                                   sendBufferMultiplier, getMac(), tuple.a);
     }
 
     InetSocketAddress getBroadcastAddress(NetworkInterface networkInterface) {

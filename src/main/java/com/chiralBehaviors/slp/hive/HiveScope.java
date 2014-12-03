@@ -323,7 +323,7 @@ public class HiveScope implements ServiceScope {
                                                       public Thread newThread(Runnable arg0) {
                                                           Thread daemon = new Thread(
                                                                                      arg0,
-                                                                                     String.format("GossipScope dispatcher[%s]",
+                                                                                     String.format("HiveScope dispatcher[%s]",
                                                                                                    i++));
                                                           daemon.setDaemon(true);
                                                           daemon.setUncaughtExceptionHandler(new UncaughtExceptionHandler() {

@@ -104,7 +104,7 @@ public class EndToEndTest {
 
     private static final AtomicInteger count        = new AtomicInteger();
     private static final AtomicBoolean deregistered = new AtomicBoolean(false);
-    private List<Engine>       members;
+    private List<Engine>               members;
     private UUID[]                     stateIds;
 
     @Test
@@ -118,10 +118,10 @@ public class EndToEndTest {
     }
 
     private Engine createDefaultCommunications(EngineListener receiver,
-                                                       boolean broadcast)
-                                                                         throws IOException {
+                                               boolean broadcast)
+                                                                 throws IOException {
         EngineConfiguration config = broadcast ? new BroadcastConfiguration()
-                                              : new MulticastConfiguration();
+                                              : MulticastConfiguration.fromYaml(getClass().getResourceAsStream("/multicast.yml"));
         Engine engine = config.construct();
         engine.setListener(receiver);
         engine.start();
@@ -172,9 +172,8 @@ public class EndToEndTest {
     }
 
     private void updateAndAwait(int iteration, int membership,
-                                Receiver[] receivers,
-                                List<Engine> members2)
-                                                              throws InterruptedException {
+                                Receiver[] receivers, List<Engine> members2)
+                                                                            throws InterruptedException {
         int id = 0;
         for (Receiver receiver : receivers) {
             receiver.setLatches(id++);

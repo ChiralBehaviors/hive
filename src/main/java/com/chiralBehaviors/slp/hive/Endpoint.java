@@ -79,8 +79,8 @@ public class Endpoint {
         }
     }
 
-    public void remove(UUID state) {
-        states.remove(state);
+    public Long remove(UUID state) {
+        return states.remove(state);
     }
 
     /**

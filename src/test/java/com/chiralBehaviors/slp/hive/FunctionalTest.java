@@ -98,15 +98,14 @@ public class FunctionalTest {
         functionalTest(false);
     }
 
-    private Engine createCommunications(boolean broadcast)
-                                                                  throws IOException {
+    private Engine createCommunications(boolean broadcast) throws IOException {
         EngineConfiguration config = broadcast ? new BroadcastConfiguration()
-                                              : new MulticastConfiguration();
+                                              : MulticastConfiguration.fromYaml(getClass().getResourceAsStream("/multicast.yml"));
         return config.construct();
     }
 
     private List<Engine> createEngines(int membership, boolean broadcast)
-                                                                                 throws IOException {
+                                                                         throws IOException {
         List<Engine> members = new ArrayList<Engine>();
         for (int i = 0; i < membership; i++) {
             members.add(createCommunications(broadcast));

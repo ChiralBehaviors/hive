@@ -10,6 +10,7 @@
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+		<network.interface>en0</network.interface>
 	</properties>
 
 	<licenses>
@@ -32,18 +33,24 @@
 		<url>https://github.com/ChiralBehaviors/hive</url>
 	</scm>
 
-    <repositories>
-        <repository>
-            <id>ChiralBehaviors-Snapshots</id>
-            <url>http://repository-chiralbehaviors.forge.cloudbees.com/snapshot/</url>
-        </repository>
-        <repository>
-            <id>ChiralBehaviors-release</id>
-            <url>http://repository-chiralbehaviors.forge.cloudbees.com/release/</url>
-        </repository>
-    </repositories>
+	<repositories>
+		<repository>
+			<id>ChiralBehaviors-Snapshots</id>
+			<url>http://repository-chiralbehaviors.forge.cloudbees.com/snapshot/</url>
+		</repository>
+		<repository>
+			<id>ChiralBehaviors-release</id>
+			<url>http://repository-chiralbehaviors.forge.cloudbees.com/release/</url>
+		</repository>
+	</repositories>
 
 	<build>
+		<testResources>
+			<testResource>
+				<filtering>true</filtering>
+				<directory>src/test/resources</directory>
+			</testResource>
+		</testResources>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
