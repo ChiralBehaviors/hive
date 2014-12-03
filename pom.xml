@@ -10,7 +10,7 @@
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-		<network.interface>en0</network.interface>
+		<network.interface>eth0</network.interface>
 	</properties>
 
 	<licenses>
