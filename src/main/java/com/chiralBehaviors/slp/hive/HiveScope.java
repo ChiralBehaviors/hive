@@ -18,6 +18,7 @@ package com.chiralBehaviors.slp.hive;
 
 import java.io.IOException;
 import java.lang.Thread.UncaughtExceptionHandler;
+import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -379,6 +380,10 @@ public class HiveScope implements ServiceScope {
             }
         }
 
+    }
+
+    public InetSocketAddress getLocalAddress() {
+        return engine.getLocalAddress();
     }
 
     /* (non-Javadoc)
