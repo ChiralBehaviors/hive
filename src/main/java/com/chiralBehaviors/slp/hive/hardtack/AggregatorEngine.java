@@ -260,7 +260,7 @@ public class AggregatorEngine implements Engine {
                 log.warn("Cannot deserialize state. Ignoring the state.", e);
             }
             return;
-        }
+        } 
         Endpoint endpoint = new Endpoint(fdFactory.create());
         Endpoint prev = members.putIfAbsent(sender, endpoint);
         if (prev != null) {

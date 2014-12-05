@@ -107,7 +107,7 @@ public class Endpoint {
         final ReentrantLock myLock = synch;
         myLock.lock();
         try {
-            if (fd != null && state.getId().equals(Common.HEARTBEAT)) {
+            if (fd != null && state.isHeartbeat()) {
                 if (logger.isTraceEnabled()) {
                     logger.trace(String.format("received heartbeat"));
                 }
@@ -118,9 +118,13 @@ public class Endpoint {
                     states.put(state.getId(), state.getTime());
                     listener.register(state.getId(), state.getState());
                 } else {
-                    if (time <= state.getTime()) {
+                    if (time < state.getTime()) {
                         states.put(state.getId(), state.getTime());
-                        listener.update(state.getId(), state.getState());
+                        if (state.isDeleted()) {
+                            listener.deregister(state.getId());
+                        } else {
+                            listener.update(state.getId(), state.getState());
+                        }
                     }
                 }
             }
