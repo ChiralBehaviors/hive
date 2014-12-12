@@ -19,6 +19,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.BindException;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
@@ -62,11 +63,20 @@ public class AggregatorConfiguration extends HardtackConfiguration {
     @Override
     public Engine construct() throws IOException {
         NetworkInterface intf = getNetworkInterface();
-        DatagramSocket socket = new DatagramSocket(
-                                                   new InetSocketAddress(
-                                                                         Utils.getAddress(intf,
-                                                                                          ipv4),
-                                                                         port));
+        DatagramSocket socket;
+        InetSocketAddress address = new InetSocketAddress(
+                                                          Utils.getAddress(intf,
+                                                                           ipv4),
+                                                          port);
+        try {
+            socket = new DatagramSocket(address);
+        } catch (BindException e) {
+            BindException bindException = new BindException(
+                                                            String.format("Cannot bind to %s",
+                                                                          address));
+            bindException.initCause(e);
+            throw bindException;
+        }
         return new AggregatorEngine(
                                     socket,
                                     getMac(),
