@@ -1,16 +1,16 @@
-/** 
+/**
  * (C) Copyright 2014 Chiral Behaviors, All Rights Reserved
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- *     
+ *
  * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, 
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. 
- * See the License for the specific language governing permissions and 
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
  * limitations under the License.
  */
 
@@ -40,6 +40,7 @@ import org.slf4j.LoggerFactory;
 
 import com.hellblazer.slp.Filter;
 import com.hellblazer.slp.InvalidSyntaxException;
+import com.hellblazer.slp.NetworkedScope;
 import com.hellblazer.slp.ServiceEvent;
 import com.hellblazer.slp.ServiceEvent.EventType;
 import com.hellblazer.slp.ServiceListener;
@@ -50,11 +51,11 @@ import com.hellblazer.slp.ServiceURL;
 
 /**
  * A service discovery scope based on a UDP broadcast based replication service
- * 
+ *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Chiral Behaviors</a>
- * 
+ *
  */
-public class HiveScope implements ServiceScope {
+public class HiveScope implements NetworkedScope {
     private class Listener implements EngineListener {
 
         /* (non-Javadoc)
@@ -98,7 +99,7 @@ public class HiveScope implements ServiceScope {
 
         /*
          * (non-Javadoc)
-         * 
+         *
          * @see java.lang.Comparable#compareTo(java.lang.Object)
          */
         @Override
@@ -151,9 +152,6 @@ public class HiveScope implements ServiceScope {
         }
     }
 
-    private final static Logger log                     = LoggerFactory.getLogger(HiveScope.class);
-    private static final int    MAXIMUM_TXT_STRING_SIZE = 255;
-
     /**
      * @param url
      * @param properties
@@ -195,7 +193,7 @@ public class HiveScope implements ServiceScope {
 
     /**
      * Answer the list of strings from the offset in the state
-     * 
+     *
      * @param state
      * @param offset
      * @return
@@ -225,7 +223,7 @@ public class HiveScope implements ServiceScope {
 
     /**
      * reconstitute a properties map from the serialized state
-     * 
+     *
      * @param state
      * @param offset
      * @return
@@ -300,10 +298,14 @@ public class HiveScope implements ServiceScope {
         return Arrays.copyOf(buffer.array(), buffer.position());
     }
 
+    private final static Logger                   log                     = LoggerFactory.getLogger(HiveScope.class);
+
+    private static final int                      MAXIMUM_TXT_STRING_SIZE = 255;
+
     private final Engine                          engine;
     private final Executor                        executor;
-    private final Set<ListenerRegistration>       listeners = new ConcurrentSkipListSet<ListenerRegistration>();
-    private final Map<UUID, ServiceReferenceImpl> services  = new ConcurrentHashMap<UUID, ServiceReferenceImpl>();
+    private final Set<ListenerRegistration>       listeners               = new ConcurrentSkipListSet<ListenerRegistration>();
+    private final Map<UUID, ServiceReferenceImpl> services                = new ConcurrentHashMap<UUID, ServiceReferenceImpl>();
 
     public HiveScope(Engine engine) {
         this(engine, 2);
@@ -344,7 +346,7 @@ public class HiveScope implements ServiceScope {
 
     /*
      * (non-Javadoc)
-     * 
+     *
      * @see
      * com.hellblazer.slp.ServiceScope#addServiceListener(com.hellblazer.slp
      * .ServiceListener, java.lang.String)
@@ -382,6 +384,7 @@ public class HiveScope implements ServiceScope {
 
     }
 
+    @Override
     public InetSocketAddress getLocalAddress() {
         return engine.getLocalAddress();
     }
@@ -396,7 +399,7 @@ public class HiveScope implements ServiceScope {
 
     /*
      * (non-Javadoc)
-     * 
+     *
      * @see
      * com.hellblazer.slp.ServiceScope#getServiceReference(java.lang.String)
      */
@@ -417,7 +420,7 @@ public class HiveScope implements ServiceScope {
 
     /*
      * (non-Javadoc)
-     * 
+     *
      * @see
      * com.hellblazer.slp.ServiceScope#getServiceReferences(java.lang.String,
      * java.lang.String)
@@ -448,7 +451,7 @@ public class HiveScope implements ServiceScope {
 
     /*
      * (non-Javadoc)
-     * 
+     *
      * @see
      * com.hellblazer.slp.ServiceScope#register(com.hellblazer.slp.ServiceURL,
      * java.util.Map)
@@ -475,7 +478,7 @@ public class HiveScope implements ServiceScope {
 
     /*
      * (non-Javadoc)
-     * 
+     *
      * @see
      * com.hellblazer.slp.ServiceScope#removeServiceListener(com.hellblazer.
      * slp.ServiceListener)
@@ -493,7 +496,7 @@ public class HiveScope implements ServiceScope {
 
     /*
      * (non-Javadoc)
-     * 
+     *
      * @see
      * com.hellblazer.slp.ServiceScope#removeServiceListener(com.hellblazer.
      * slp.ServiceListener, java.lang.String)
@@ -506,7 +509,7 @@ public class HiveScope implements ServiceScope {
 
     /*
      * (non-Javadoc)
-     * 
+     *
      * @see com.hellblazer.slp.ServiceScope#setProperties(java.util.UUID,
      * java.util.Map)
      */
@@ -544,7 +547,7 @@ public class HiveScope implements ServiceScope {
 
     /*
      * (non-Javadoc)
-     * 
+     *
      * @see com.hellblazer.slp.ServiceScope#unregister(java.util.UUID)
      */
     @Override

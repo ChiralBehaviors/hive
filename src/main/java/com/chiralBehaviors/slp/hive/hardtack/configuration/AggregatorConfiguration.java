@@ -53,9 +53,9 @@ public class AggregatorConfiguration extends HardtackConfiguration {
         return mapper.readValue(yaml, AggregatorConfiguration.class);
     }
 
-    public static final int DEFAULT_PORT = 56999;
+    public static final int  DEFAULT_PORT = 56999;
 
-    public int              port         = DEFAULT_PORT;
+    public InetSocketAddress endpoint     = new InetSocketAddress(DEFAULT_PORT);
 
     /* (non-Javadoc)
      * @see com.chiralBehaviors.slp.hive.configuration.EngineConfiguration#construct()
@@ -64,10 +64,13 @@ public class AggregatorConfiguration extends HardtackConfiguration {
     public Engine construct() throws IOException {
         NetworkInterface intf = getNetworkInterface();
         DatagramSocket socket;
-        InetSocketAddress address = new InetSocketAddress(
-                                                          Utils.getAddress(intf,
-                                                                           ipv4),
-                                                          port);
+        InetSocketAddress address;
+        if (endpoint.getAddress().isAnyLocalAddress()) {
+            address = new InetSocketAddress(Utils.getAddress(intf, ipv4),
+                                            endpoint.getPort());
+        } else {
+            address = endpoint;
+        }
         try {
             socket = new DatagramSocket(address);
         } catch (BindException e) {
