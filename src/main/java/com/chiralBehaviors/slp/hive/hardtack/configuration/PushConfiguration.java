@@ -27,6 +27,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Executors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.chiralBehaviors.slp.hive.Engine;
 import com.chiralBehaviors.slp.hive.hardtack.PushEngine;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -41,6 +44,8 @@ import com.hellblazer.utils.Utils;
  *
  */
 public class PushConfiguration extends HardtackConfiguration {
+    private static final Logger log = LoggerFactory.getLogger(PushConfiguration.class);
+
     public static PushConfiguration fromYaml(File yaml)
                                                        throws JsonParseException,
                                                        JsonMappingException,
@@ -73,6 +78,7 @@ public class PushConfiguration extends HardtackConfiguration {
                                                                             Utils.allocatePort(address)));
         int i = 0;
         for (InetSocketAddress aggregator : aggregators) {
+            log.info(String.format("Adding aggregator: %s", aggregator));
             if (aggregator.getAddress().isAnyLocalAddress()) {
                 aggregators.set(i++,
                                 new InetSocketAddress(address,
